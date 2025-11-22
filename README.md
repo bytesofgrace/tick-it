@@ -9,6 +9,7 @@ A modern, beautiful todo list web app built with Expo and Firebase. Manage your 
 - **Beautiful UI**: Modern, clean design with smooth animations
 - **CRUD Operations**: Create, read, update, and delete todos
 - **Task Management**: Mark todos as complete/incomplete
+- **Smart Notifications**: Flexible reminders (daily, weekly, or one-time) with custom times
 - **Statistics**: View total, active, and completed task counts
 - **Responsive**: Works great on web, iOS, and Android
 
@@ -102,5 +103,9 @@ npm run android
 # Start the development server
 npm start
 ```
+
+## Notifications 🔔
+
+Tick-It includes a fully functional notification system! Enable daily reminders in the Settings screen to get notified at 9 AM every day to check your tasks. See [NOTIFICATIONS.md](NOTIFICATIONS.md) for detailed documentation.
 
 Enjoy using Tick-It! 🎉

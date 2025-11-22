@@ -19,6 +19,7 @@
     "expo": "~54.0.10",
     "expo-auth-session": "^7.0.8",
     "expo-firebase-core": "^6.0.0",
+    "expo-notifications": "^0.32.13",
     "expo-status-bar": "~3.0.8",
     "expo-web-browser": "^15.0.7",
     "firebase": "^12.3.0",

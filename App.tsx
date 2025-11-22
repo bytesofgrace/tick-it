@@ -9,6 +9,7 @@ import TodoScreen from './screens/TodoScreen';
 import ExpenseScreen from './screens/ExpenseScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import AccountSettingsScreen from './screens/AccountSettingsScreen';
+import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, ActivityIndicator } from 'react-native';
 
@@ -77,6 +78,7 @@ function AppNavigator() {
         <>
           <Stack.Screen name="MainTabs" component={TabNavigator} />
           <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
         </>
       ) : (
         <>

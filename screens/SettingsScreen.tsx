@@ -1,19 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Switch, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 export default function SettingsScreen({ navigation }: any) {
   const { currentUser, logout, userName, weeklyGoal, monthlyGoal } = useAuth();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
-  const [todos, setTodos] = useState([]);
-  const [expenses, setExpenses] = useState([]);
+  const [frequency, setFrequency] = useState<'none' | 'daily' | 'weekly' | 'once'>('none');
+  const [todos, setTodos] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
 
   useEffect(() => {
     if (!currentUser) return;
+
+    // Load notification preferences
+    const loadNotificationPreferences = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setNotificationsEnabled(data.notificationsEnabled ?? false);
+          setDailyRemindersEnabled(data.dailyRemindersEnabled ?? false);
+          setFrequency(data.notificationFrequency ?? 'none');
+        }
+      } catch (error) {
+        console.error('Error loading notification preferences:', error);
+      }
+    };
+
+    loadNotificationPreferences();
 
     // Load todos
     const todosQuery = query(collection(db, 'todos'), where('userId', '==', currentUser.uid));
@@ -232,25 +250,21 @@ export default function SettingsScreen({ navigation }: any) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Preferences</Text>
           
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>Notifications</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: '#8B7BA8', true: '#CEE476' }}
-              thumbColor={notificationsEnabled ? '#6C55BE' : '#f4f3f4'}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>Daily Reminders</Text>
-            <Switch
-              value={dailyRemindersEnabled}
-              onValueChange={setDailyRemindersEnabled}
-              trackColor={{ false: '#8B7BA8', true: '#CEE476' }}
-              thumbColor={dailyRemindersEnabled ? '#6C55BE' : '#f4f3f4'}
-            />
-          </View>
+          <TouchableOpacity 
+            style={styles.settingItem} 
+            onPress={() => navigation.navigate('NotificationSettings')}
+          >
+            <View>
+              <Text style={styles.settingLabel}>Notifications</Text>
+              <Text style={styles.settingSubtext}>
+                {frequency === 'none' && 'Off'}
+                {frequency === 'daily' && 'Daily reminders'}
+                {frequency === 'weekly' && 'Weekly reminders'}
+                {frequency === 'once' && 'One-time reminder'}
+              </Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* About Section */}
@@ -441,6 +455,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#6C55BE',
+  },
+  settingSubtext: {
+    fontSize: 13,
+    color: '#8B7BA8',
+    marginTop: 4,
   },
   deleteButton: {
     backgroundColor: '#EF4444',
