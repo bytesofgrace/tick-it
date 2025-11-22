@@ -3,6 +3,8 @@ export interface Todo {
   title: string;
   description?: string;
   completed: boolean;
+  priority: boolean;
+  dueDate?: Date;
   createdAt: Date;
   updatedAt: Date;
   userId: string;

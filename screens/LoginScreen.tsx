@@ -11,41 +11,81 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../firebaseConfig';
+import { sendPasswordResetEmail } from 'firebase/auth';
 
 interface LoginScreenProps {
   navigation: any;
 }
 
-export default function LoginScreen({ navigation }: LoginScreenProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function LoginScreen({ navigation }: LoginScreenProps) {   // def login_screen(navigation): \npass & from ... import ...
+  const [email, setEmail] = useState('');           // email = ""
+  const [password, setPassword] = useState('');     // def set_email(new_value):
+  const [loading, setLoading] = useState(false);    //    global email
   const { login } = useAuth();
-
-  async function handleLogin() {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+  
+  async function handleForgotPassword() {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address first');
       return;
     }
-
-    if (!email.includes('@')) {
+    
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
       Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
+    try {
+      await sendPasswordResetEmail(auth, email);
+      Alert.alert('Success', 'Password reset email sent! Check your inbox and spam folder.');
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/user-not-found') {
+        Alert.alert('Error', 'No account found with this email address');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to send password reset email');
+      }
+    }
+  }
+
+  async function handleLogin() {
+    if (!email && !password) {
+      Alert.alert('Error', 'Please enter email and password');
+      return;
+    } 
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email');
+      return;
+    }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+    if (!password) {
+      Alert.alert('Error', 'Please enter your password');
+      return;
+    }
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
 
+    const passwordPattern = /^(?=(?:.*\d){2,})(?=.*[A-Z]).+$/;
+    if (!passwordPattern.test(password)) {
+      Alert.alert('Error', 'Password must contain at least 2 numbers and 1 uppercase letter');
+      return;
+    }
+
     try {
-      setLoading(true);
-      await login(email, password);
-    } catch (error: any) {
-      console.error(error);
+      setLoading(true);              // loading = True
+      await login(email, password);  // await login(email, password)
+    } catch (error: any) {           // except Exception as error:
+      console.error(error);          // print(error)
       Alert.alert('Login Failed', error.message || 'An error occurred during login');
-    } finally {
-      setLoading(false);
+    } finally {                      // print(f"Login Failed: {str(error) or 'An error occurred during login'}")
+      setLoading(false);             // loading = False
     }
   }
 
@@ -56,8 +96,8 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
-          <Text style={styles.title}>Don't come Back!</Text>
-          <Text style={styles.subtitle}>Sign in to continue to Tick-It</Text>
+          <Text style={styles.title}>Welcome to Tick-it!</Text>
+          <Text style={styles.subtitle}>Log in to start ticking</Text>
         </View>
 
         <View style={styles.form}>
@@ -66,7 +106,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             <TextInput
               style={styles.input}
               placeholder="Enter your email"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#8B7BA8"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -80,7 +120,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             <TextInput
               style={styles.input}
               placeholder="Enter your password"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#8B7BA8"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -88,13 +128,17 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             />
           </View>
 
+          <TouchableOpacity onPress={handleForgotPassword}>
+            <Text style={styles.forgotPassword}>Forgot Password?</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[styles.loginButton, loading && styles.disabledButton]}
             onPress={handleLogin}
             disabled={loading}
           >
             <Text style={styles.loginButtonText}>
-              {loading ? 'Signing In...' : 'Sign In'}
+              {loading ? 'Logging In...' : 'Log In'}
             </Text>
           </TouchableOpacity>
 
@@ -113,7 +157,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#6C55BE', // Purple from icon
   },
   scrollContainer: {
     flexGrow: 1,
@@ -127,12 +171,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#CEE476', // Green from icon
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#FFFFFF',
     textAlign: 'center',
   },
   form: {
@@ -144,43 +188,33 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF', // White background for inputs
+    borderWidth: 2,
+    borderColor: '#CEE476', // Green border
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#1F2937',
+    color: '#6C55BE', // Purple text for better contrast on white
   },
   loginButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#CEE476', // Green button
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 10,
-    shadowColor: '#3B82F6',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   disabledButton: {
-    backgroundColor: '#9CA3AF',
-    shadowOpacity: 0,
-    elevation: 0,
+    backgroundColor: '#240046', // Dark purple when disabled
   },
   loginButtonText: {
-    color: '#FFFFFF',
+    color: '#6C55BE', // Purple text on green button
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   signupContainer: {
     flexDirection: 'row',
@@ -190,11 +224,20 @@ const styles = StyleSheet.create({
   },
   signupText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#FFFFFF',
   },
   signupLink: {
     fontSize: 14,
-    color: '#3B82F6',
+    color: '#CEE476', // Green
     fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  forgotPassword: {
+    fontSize: 14,
+    color: '#CEE476', // Green
+    textAlign: 'right',
+    marginTop: 8,
+    marginBottom: 4,
+    textDecorationLine: 'underline',
   },
 });

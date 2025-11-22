@@ -34,8 +34,18 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (password.length < 8) {
+      Alert.alert('Error', 'Password must be at least 8 characters');
+      return;
+    }
+
+    // Password strength validation with regex
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
+    if (!passwordRegex.test(password)) {
+      Alert.alert(
+        'Weak Password', 
+        'Password must contain:\n• At least one lowercase letter\n• At least one uppercase letter\n• At least one number'
+      );
       return;
     }
 
@@ -47,7 +57,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
     try {
       setLoading(true);
       await signup(email, password);
-      Alert.alert('Success', 'Account created successfully!');
+      Alert.alert('Success', 'Account created successfully. Time to tick-it!');
     } catch (error: any) {
       console.error(error);
       Alert.alert('Registration Failed', error.message || 'An error occurred during registration');
@@ -73,7 +83,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
             <TextInput
               style={styles.input}
               placeholder="Enter your email"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#8B7BA8"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -87,12 +97,15 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
             <TextInput
               style={styles.input}
               placeholder="Create a password"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#8B7BA8"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
               autoComplete="password-new"
             />
+            <Text style={styles.passwordHint}>
+              Must contain: uppercase, lowercase & number (min. 8 characters)
+            </Text>
           </View>
 
           <View style={styles.inputContainer}>
@@ -100,7 +113,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
             <TextInput
               style={styles.input}
               placeholder="Confirm your password"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#8B7BA8"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -121,7 +134,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>Sign In</Text>
+              <Text style={styles.loginLink}>Log In</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -133,7 +146,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#6C55BE', // Purple
   },
   scrollContainer: {
     flexGrow: 1,
@@ -147,14 +160,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#CEE476', // Green
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#FFFFFF', // White
     textAlign: 'center',
-    lineHeight: 24,
   },
   form: {
     width: '100%',
@@ -165,43 +177,39 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: '#FFFFFF', // White
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF', // White
+    borderWidth: 2,
+    borderColor: '#CEE476', // Green
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#1F2937',
+    color: '#6C55BE', // Purple
+  },
+  passwordHint: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   registerButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#CEE476', // Green
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 10,
-    shadowColor: '#10B981',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   disabledButton: {
-    backgroundColor: '#9CA3AF',
-    shadowOpacity: 0,
-    elevation: 0,
+    backgroundColor: '#8B7BA8', // Light purple when disabled
   },
   registerButtonText: {
-    color: '#FFFFFF',
+    color: '#6C55BE', // Purple
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   loginContainer: {
     flexDirection: 'row',
@@ -211,11 +219,12 @@ const styles = StyleSheet.create({
   },
   loginText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#FFFFFF', // White
   },
   loginLink: {
     fontSize: 14,
-    color: '#3B82F6',
+    color: '#CEE476', // Green
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
