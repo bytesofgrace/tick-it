@@ -1,3 +1,9 @@
+export interface Subtask {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface Todo {
   id: string;
   title: string;
@@ -5,6 +11,7 @@ export interface Todo {
   completed: boolean;
   priority: boolean;
   dueDate?: Date;
+  subtasks?: Subtask[];
   createdAt: Date;
   updatedAt: Date;
   userId: string;

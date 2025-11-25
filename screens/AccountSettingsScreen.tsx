@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, TextInput, Modal, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 
 export default function AccountSettingsScreen({ navigation }: any) {
   const { currentUser, userName, updateUserName, changePassword, resetPassword, weeklyGoal, monthlyGoal, updateGoals } = useAuth();
+  const { fontScale } = useAccessibility();
   const [showNameModal, setShowNameModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showGoalsModal, setShowGoalsModal] = useState(false);
   const [tempName, setTempName] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tempWeeklyGoal, setTempWeeklyGoal] = useState(weeklyGoal);
@@ -29,14 +32,30 @@ export default function AccountSettingsScreen({ navigation }: any) {
   };
 
   const handleChangePassword = () => {
+    setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
     setShowPasswordModal(true);
   };
 
   const handleSavePassword = async () => {
-    if (newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
+    if (!currentPassword) {
+      Alert.alert('Error', 'Please enter your current password');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      Alert.alert('Error', 'Password must be at least 8 characters long');
+      return;
+    }
+
+    // Password strength validation with regex
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
+    if (!passwordRegex.test(newPassword)) {
+      Alert.alert(
+        'Weak Password', 
+        'Password must contain:\n• At least one lowercase letter\n• At least one uppercase letter\n• At least one number'
+      );
       return;
     }
 
@@ -46,8 +65,9 @@ export default function AccountSettingsScreen({ navigation }: any) {
     }
 
     try {
-      await changePassword(newPassword);
+      await changePassword(newPassword, currentPassword);
       setShowPasswordModal(false);
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       Alert.alert('Success', 'Password updated successfully!');
@@ -55,6 +75,8 @@ export default function AccountSettingsScreen({ navigation }: any) {
       let errorMessage = 'Failed to update password';
       if (error.code === 'auth/requires-recent-login') {
         errorMessage = 'For security reasons, please log out and log back in, then try changing your password again.';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Current password is incorrect';
       }
       Alert.alert('Error', errorMessage);
     }
@@ -105,6 +127,17 @@ export default function AccountSettingsScreen({ navigation }: any) {
     }
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => Alert.alert('Delete Account', 'Account deletion feature coming soon!') },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -152,6 +185,11 @@ export default function AccountSettingsScreen({ navigation }: any) {
         <TouchableOpacity style={styles.settingItem} onPress={handleForgotPassword}>
           <Text style={styles.settingLabel}>Forgot Password</Text>
           <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+
+        {/* Delete Account Button */}
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteAccount}>
+          <Text style={styles.deleteButtonText}>Delete Account</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -210,12 +248,21 @@ export default function AccountSettingsScreen({ navigation }: any) {
                 
                 <TextInput
                   style={styles.modalInput}
+                  placeholder="Current password"
+                  placeholderTextColor="#8B7BA8"
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  secureTextEntry
+                  autoFocus
+                />
+                
+                <TextInput
+                  style={styles.modalInput}
                   placeholder="New password"
                   placeholderTextColor="#8B7BA8"
                   value={newPassword}
                   onChangeText={setNewPassword}
                   secureTextEntry
-                  autoFocus
                 />
                 
                 <TextInput
@@ -228,7 +275,7 @@ export default function AccountSettingsScreen({ navigation }: any) {
                 />
                 
                 <Text style={styles.passwordHint}>
-                  Password must be at least 6 characters long
+                  Must contain: uppercase, lowercase & number{'\n'}(min. 8 characters)
                 </Text>
                 
                 <View style={styles.modalActions}>
@@ -492,5 +539,19 @@ const styles = StyleSheet.create({
     color: '#6C55BE',
     minWidth: 80,
     textAlign: 'center',
+  },
+  deleteButton: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 30,
+    marginBottom: 20,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

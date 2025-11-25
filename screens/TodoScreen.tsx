@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Platform,
+  ScrollView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -28,6 +29,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 import { Todo } from '../types';
 
 interface TodoItemProps {
@@ -39,6 +42,9 @@ interface TodoItemProps {
 }
 
 function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoItemProps) {
+  const [showSubtasks, setShowSubtasks] = useState(false);
+  const { fontScale } = useAccessibility();
+
   const getUrgencyStyle = () => {
     if (!todo.dueDate || todo.completed) return null;
     
@@ -54,6 +60,29 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
       return styles.todoItemSoon; // Due in 2-3 days - orange
     }
     return null;
+  };
+
+  const handleToggleSubtask = async (subtaskId: string) => {
+    if (!todo.subtasks) return;
+    
+    const updatedSubtasks = todo.subtasks.map(st =>
+      st.id === subtaskId ? { ...st, completed: !st.completed } : st
+    );
+    
+    try {
+      await updateDoc(doc(db, 'todos', todo.id), {
+        subtasks: updatedSubtasks,
+        updatedAt: new Date(),
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update subtask');
+    }
+  };
+
+  const getCompletedSubtasksCount = () => {
+    if (!todo.subtasks || todo.subtasks.length === 0) return null;
+    const completed = todo.subtasks.filter(st => st.completed).length;
+    return `${completed}/${todo.subtasks.length}`;
   };
 
   const formatDueDate = () => {
@@ -81,7 +110,7 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
         onPress={() => onTogglePriority(todo.id, !todo.priority)} 
         style={[styles.priorityButton, todo.priority && styles.priorityButtonActive]}
       >
-        <Text style={[styles.priorityButtonText, todo.priority && styles.priorityButtonTextActive]}>
+        <Text style={[styles.priorityButtonText, todo.priority && styles.priorityButtonTextActive, { fontSize: 20 * fontScale }]}>
           {todo.priority ? '★' : '☆'}
         </Text>
       </TouchableOpacity>
@@ -91,16 +120,44 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
           onPress={() => onToggle(todo.id, !todo.completed)}
         >
           <View style={[styles.checkbox, todo.completed && styles.checkboxCompleted]}>
-            {todo.completed && <Text style={styles.checkmark}>✓</Text>}
+            {todo.completed && <Text style={[styles.checkmark, { fontSize: 24 * fontScale }]}>✓</Text>}
           </View>
           <View style={styles.todoText}>
-            <Text style={[styles.todoTitle, todo.completed && styles.todoTitleCompleted]}>
+            <Text style={[styles.todoTitle, todo.completed && styles.todoTitleCompleted, { fontSize: 18 * fontScale }]}>
               {todo.title}
             </Text>
             {todo.description && (
-              <Text style={[styles.todoDescription, todo.completed && styles.todoDescriptionCompleted]}>
+              <Text style={[styles.todoDescription, todo.completed && styles.todoDescriptionCompleted, { fontSize: 14 * fontScale }]}>
                 {todo.description}
               </Text>
+            )}
+            {todo.subtasks && todo.subtasks.length > 0 && (
+              <TouchableOpacity 
+                style={styles.subtasksToggle}
+                onPress={() => setShowSubtasks(!showSubtasks)}
+              >
+                <Text style={[styles.subtasksToggleText, { fontSize: 13 * fontScale }]}>
+                  {showSubtasks ? '▼' : '▶'} Checklist ({getCompletedSubtasksCount()})
+                </Text>
+              </TouchableOpacity>
+            )}
+            {showSubtasks && todo.subtasks && todo.subtasks.length > 0 && (
+              <View style={styles.subtasksList}>
+                {todo.subtasks.map((subtask) => (
+                  <TouchableOpacity
+                    key={subtask.id}
+                    style={styles.subtaskItem}
+                    onPress={() => handleToggleSubtask(subtask.id)}
+                  >
+                    <View style={[styles.subtaskCheckbox, subtask.completed && styles.checkboxCompleted]}>
+                      {subtask.completed && <Text style={[styles.subtaskCheckmark, { fontSize: 12 * fontScale }]}>✓</Text>}
+                    </View>
+                    <Text style={[styles.subtaskText, subtask.completed && styles.subtaskTextCompleted, { fontSize: 13 * fontScale }]}>
+                      {subtask.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
           </View>
         </TouchableOpacity>
@@ -108,13 +165,13 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
       <View style={styles.todoActions}>
         <View style={styles.actionButtons}>
           {todo.dueDate && !todo.completed && (
-            <Text style={styles.dueDateText}>{formatDueDate()}</Text>
+            <Text style={[styles.dueDateText, { fontSize: 12 * fontScale }]}>{formatDueDate()}</Text>
           )}
           <TouchableOpacity onPress={() => onEdit(todo)} style={styles.editButton}>
-            <Text style={styles.editButtonText}>✏️</Text>
+            <Text style={[styles.editButtonText, { fontSize: 24 * fontScale }]}>✏️</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => onDelete(todo.id)} style={styles.deleteButton}>
-            <Text style={styles.deleteButtonText}>🗑️</Text>
+            <Text style={[styles.deleteButtonText, { fontSize: 24 * fontScale }]}>🗑️</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -133,9 +190,47 @@ export default function TodoScreen() {
   const [dueTime, setDueTime] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [subtasks, setSubtasks] = useState<{id: string; text: string; completed: boolean}[]>([]);
+  const [newSubtaskText, setNewSubtaskText] = useState('');
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiRef = useRef<any>(null);
   const { currentUser, logout } = useAuth();
+  const { showNotification } = useNotification();
+  const { fontScale } = useAccessibility();
+
+  // Dynamic styles based on font scale
+  const dynamicStyles = {
+    loadingText: { fontSize: 16 * fontScale },
+    headerTitle: { fontSize: 28 * fontScale },
+    motivationalText: { fontSize: 14 * fontScale },
+    statNumber: { fontSize: 24 * fontScale },
+    statLabel: { fontSize: 12 * fontScale },
+    emptyTitle: { fontSize: 20 * fontScale },
+    emptyDescription: { fontSize: 14 * fontScale },
+    checkmark: { fontSize: 24 * fontScale },
+    todoTitle: { fontSize: 18 * fontScale },
+    todoDescription: { fontSize: 14 * fontScale },
+    subtasksToggleText: { fontSize: 13 * fontScale },
+    subtaskCheckmark: { fontSize: 12 * fontScale },
+    subtaskText: { fontSize: 13 * fontScale },
+    priorityButtonText: { fontSize: 20 * fontScale },
+    editButtonText: { fontSize: 24 * fontScale },
+    deleteButtonText: { fontSize: 24 * fontScale },
+    addButtonText: { fontSize: 45 * fontScale },
+    modalTitle: { fontSize: 20 * fontScale },
+    modalInput: { fontSize: 16 * fontScale },
+    cancelButtonText: { fontSize: 16 * fontScale },
+    saveButtonText: { fontSize: 16 * fontScale },
+    dueDateText: { fontSize: 12 * fontScale },
+    sectionLabel: { fontSize: 14 * fontScale },
+    subtaskInput: { fontSize: 16 * fontScale },
+    addSubtaskButtonText: { fontSize: 24 * fontScale },
+    modalSubtaskText: { fontSize: 14 * fontScale },
+    removeSubtaskButton: { fontSize: 18 * fontScale },
+    datePickerButtonText: { fontSize: 16 * fontScale },
+    datePickerDoneText: { fontSize: 16 * fontScale },
+    clearDateText: { fontSize: 14 * fontScale },
+  };
 
   const motivationalPhrases = [
     "Tick it off - one step closer to your goals!",
@@ -175,6 +270,7 @@ export default function TodoScreen() {
             completed: data.completed,
             priority: data.priority || false,
             dueDate: data.dueDate ? data.dueDate.toDate() : undefined,
+            subtasks: data.subtasks || [],
             createdAt: data.createdAt.toDate(),
             updatedAt: data.updatedAt.toDate(),
             userId: data.userId,
@@ -191,6 +287,9 @@ export default function TodoScreen() {
         
         setTodos(todosData);
         setLoading(false);
+
+        // Check for upcoming and overdue tasks, show notifications
+        checkForUrgentTasks(todosData);
       },
       (error) => {
         console.error('Firestore query error:', error);
@@ -202,6 +301,40 @@ export default function TodoScreen() {
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  // Check for urgent tasks and show notifications
+  const checkForUrgentTasks = (tasks: Todo[]) => {
+    const now = new Date();
+    const incompleteTasks = tasks.filter(t => !t.completed && t.dueDate);
+
+    // Check for overdue tasks
+    const overdueTasks = incompleteTasks.filter(t => {
+      const due = new Date(t.dueDate!);
+      return due < now;
+    });
+
+    // Check for tasks due within 24 hours
+    const urgentTasks = incompleteTasks.filter(t => {
+      const due = new Date(t.dueDate!);
+      const hoursUntilDue = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
+      return hoursUntilDue > 0 && hoursUntilDue <= 24;
+    });
+
+    // Show notifications
+    if (overdueTasks.length > 0) {
+      showNotification(
+        '⚠️ Overdue Tasks',
+        `You have ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}!`,
+        'error'
+      );
+    } else if (urgentTasks.length > 0) {
+      showNotification(
+        '⏰ Upcoming Tasks',
+        `${urgentTasks.length} task${urgentTasks.length > 1 ? 's' : ''} due within 24 hours!`,
+        'warning'
+      );
+    }
+  };
 
   const handleAddTodo = async () => {
     if (!title.trim()) {
@@ -223,6 +356,7 @@ export default function TodoScreen() {
         completed: false,
         priority: false,
         dueDate: finalDueDate || null,
+        subtasks: subtasks,
         createdAt: new Date(),
         updatedAt: new Date(),
         userId: currentUser?.uid,
@@ -231,6 +365,8 @@ export default function TodoScreen() {
       setDescription('');
       setDueDate(null);
       setDueTime(null);
+      setSubtasks([]);
+      setNewSubtaskText('');
       setModalVisible(false);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to add task');
@@ -255,12 +391,15 @@ export default function TodoScreen() {
         title: title.trim(),
         description: description.trim(),
         dueDate: finalDueDate || null,
+        subtasks: subtasks,
         updatedAt: new Date(),
       });
       setTitle('');
       setDescription('');
       setDueDate(null);
       setDueTime(null);
+      setSubtasks([]);
+      setNewSubtaskText('');
       setEditingTodo(null);
       setModalVisible(false);
     } catch (error: any) {
@@ -335,6 +474,8 @@ export default function TodoScreen() {
     setTitle('');
     setDescription('');
     setDueDate(null);
+    setSubtasks([]);
+    setNewSubtaskText('');
     setShowDatePicker(false);
     setEditingTodo(null);
     setModalVisible(true);
@@ -344,6 +485,8 @@ export default function TodoScreen() {
     setTitle(todo.title);
     setDescription(todo.description || '');
     setDueDate(todo.dueDate || null);
+    setSubtasks(todo.subtasks || []);
+    setNewSubtaskText('');
     // Extract time from dueDate if it exists
     if (todo.dueDate) {
       const hasTime = todo.dueDate.getHours() !== 0 || todo.dueDate.getMinutes() !== 0;
@@ -359,6 +502,21 @@ export default function TodoScreen() {
     setShowTimePicker(false);
     setEditingTodo(todo);
     setModalVisible(true);
+  };
+
+  const addSubtask = () => {
+    if (newSubtaskText.trim()) {
+      setSubtasks([...subtasks, {
+        id: Date.now().toString(),
+        text: newSubtaskText.trim(),
+        completed: false
+      }]);
+      setNewSubtaskText('');
+    }
+  };
+
+  const removeSubtask = (id: string) => {
+    setSubtasks(subtasks.filter(st => st.id !== id));
   };
 
   const handleLogout = () => {
@@ -384,7 +542,7 @@ export default function TodoScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading your todos...</Text>
+        <Text style={[styles.loadingText, dynamicStyles.loadingText]}>Loading your todos...</Text>
       </View>
     );
   }
@@ -407,23 +565,23 @@ export default function TodoScreen() {
       
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>To Do List</Text>
-          <Text style={styles.motivationalText}>{randomPhrase}</Text>
+          <Text style={[styles.headerTitle, dynamicStyles.headerTitle]}>To Do List</Text>
+          <Text style={[styles.motivationalText, dynamicStyles.motivationalText]}>{randomPhrase}</Text>
         </View>
 
         <View style={styles.contentArea}>
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{todos.length}</Text>
-              <Text style={styles.statLabel}>Total</Text>
+              <Text style={[styles.statNumber, dynamicStyles.statNumber]}>{todos.length}</Text>
+              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>Total</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{todos.filter(t => !t.completed).length}</Text>
-              <Text style={styles.statLabel}>Active</Text>
+              <Text style={[styles.statNumber, dynamicStyles.statNumber]}>{todos.filter(t => !t.completed).length}</Text>
+              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>Active</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{todos.filter(t => t.completed).length}</Text>
-              <Text style={styles.statLabel}>Completed</Text>
+              <Text style={[styles.statNumber, dynamicStyles.statNumber]}>{todos.filter(t => t.completed).length}</Text>
+              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>Completed</Text>
             </View>
           </View>
 
@@ -444,14 +602,14 @@ export default function TodoScreen() {
             contentContainerStyle={todos.length === 0 ? styles.emptyListContainer : undefined}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyTitle}>No tasks to organise yet!</Text>
-                <Text style={styles.emptyDescription}>Write one and start ticking</Text>
+                <Text style={[styles.emptyTitle, dynamicStyles.emptyTitle]}>No tasks to organise yet!</Text>
+                <Text style={[styles.emptyDescription, dynamicStyles.emptyDescription]}>Write one and start ticking</Text>
               </View>
             }
           />
 
           <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
-            <Text style={styles.addButtonText}>+</Text>
+            <Text style={[styles.addButtonText, dynamicStyles.addButtonText]}>+</Text>
           </TouchableOpacity>
         </View>
 
@@ -465,21 +623,26 @@ export default function TodoScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.modalContainer}>
-                  <Text style={styles.modalTitle}>
+                  <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
                     {editingTodo ? 'Edit Task' : 'Add New Task'}
                   </Text>
+                  
+                  <ScrollView 
+                    style={styles.modalScrollView}
+                    showsVerticalScrollIndicator={true}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <TextInput
+                      style={[styles.modalInput, dynamicStyles.modalInput]}
+                      placeholder="Task title"
+                      placeholderTextColor="#8B7BA8"
+                      value={title}
+                      onChangeText={setTitle}
+                      autoFocus
+                    />
 
                   <TextInput
-                    style={styles.modalInput}
-                    placeholder="Task title"
-                    placeholderTextColor="#8B7BA8"
-                    value={title}
-                    onChangeText={setTitle}
-                    autoFocus
-                  />
-
-                  <TextInput
-                    style={[styles.modalInput, styles.descriptionInput]}
+                    style={[styles.modalInput, styles.descriptionInput, dynamicStyles.modalInput]}
                     placeholder="Description (optional)"
                     placeholderTextColor="#8B7BA8"
                     value={description}
@@ -488,13 +651,13 @@ export default function TodoScreen() {
                     numberOfLines={3}
                   />
 
-                  <Text style={styles.sectionLabel}>Due Date</Text>
+                  <Text style={[styles.sectionLabel, dynamicStyles.sectionLabel]}>Due Date</Text>
                   
                   <TouchableOpacity
                     style={styles.datePickerButton}
                     onPress={() => setShowDatePicker(true)}
                   >
-                    <Text style={styles.datePickerButtonText}>
+                    <Text style={[styles.datePickerButtonText, dynamicStyles.datePickerButtonText]}>
                       {dueDate ? `📅 ${dueDate.toLocaleDateString()}` : '📅 Select Date'}
                     </Text>
                   </TouchableOpacity>
@@ -507,7 +670,7 @@ export default function TodoScreen() {
                         setDueTime(null);
                       }}
                     >
-                      <Text style={styles.clearDateText}>Clear Date</Text>
+                      <Text style={[styles.clearDateText, dynamicStyles.clearDateText]}>Clear Date</Text>
                     </TouchableOpacity>
                   )}
 
@@ -583,6 +746,40 @@ export default function TodoScreen() {
                       )}
                     </>
                   )}
+
+                  <Text style={styles.sectionLabel}>Checklist (Optional)</Text>
+                  
+                  {subtasks.length > 0 && (
+                    <View style={styles.modalSubtasksList}>
+                      {subtasks.map((subtask) => (
+                        <View key={subtask.id} style={styles.modalSubtaskItem}>
+                          <Text style={styles.modalSubtaskText}>• {subtask.text}</Text>
+                          <TouchableOpacity onPress={() => removeSubtask(subtask.id)}>
+                            <Text style={styles.removeSubtaskButton}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  <View style={styles.addSubtaskContainer}>
+                    <TextInput
+                      style={styles.subtaskInput}
+                      placeholder="Add checklist item"
+                      placeholderTextColor="#8B7BA8"
+                      value={newSubtaskText}
+                      onChangeText={setNewSubtaskText}
+                      onSubmitEditing={addSubtask}
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity 
+                      style={styles.addSubtaskButton}
+                      onPress={addSubtask}
+                    >
+                      <Text style={styles.addSubtaskButtonText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  </ScrollView>
 
                   <View style={styles.modalActions}>
                     <TouchableOpacity
@@ -798,6 +995,49 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: '#8B7BA8',
   },
+  subtasksToggle: {
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  subtasksToggleText: {
+    fontSize: 13,
+    color: '#8B7BA8',
+    fontWeight: '600',
+  },
+  subtasksList: {
+    marginTop: 8,
+    marginLeft: 8,
+    gap: 6,
+  },
+  subtaskItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  subtaskCheckbox: {
+    width: 18,
+    height: 18,
+    borderWidth: 2,
+    borderColor: '#8B7BA8',
+    borderRadius: 3,
+    marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subtaskCheckmark: {
+    fontSize: 12,
+    color: '#6C55BE',
+    fontWeight: 'bold',
+  },
+  subtaskText: {
+    fontSize: 13,
+    color: '#6C55BE',
+    flex: 1,
+  },
+  subtaskTextCompleted: {
+    textDecorationLine: 'line-through',
+    color: '#8B7BA8',
+  },
   todoActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -880,8 +1120,12 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '100%',
     maxWidth: 400,
+    maxHeight: '90%',
     borderWidth: 2,
     borderColor: '#CEE476',
+  },
+  modalScrollView: {
+    maxHeight: 500,
   },
   modalTitle: {
     fontSize: 20,
@@ -947,6 +1191,60 @@ const styles = StyleSheet.create({
     color: '#6C55BE',
     marginBottom: 8,
     marginTop: 8,
+  },
+  addSubtaskContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  subtaskInput: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: '#CEE476',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#6C55BE',
+  },
+  addSubtaskButton: {
+    backgroundColor: '#CEE476',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addSubtaskButtonText: {
+    fontSize: 24,
+    color: '#6C55BE',
+    fontWeight: 'bold',
+  },
+  modalSubtasksList: {
+    marginBottom: 12,
+    gap: 6,
+  },
+  modalSubtaskItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  modalSubtaskText: {
+    fontSize: 14,
+    color: '#6C55BE',
+    flex: 1,
+  },
+  removeSubtaskButton: {
+    fontSize: 18,
+    color: '#8B7BA8',
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
   },
   datePickerButton: {
     backgroundColor: '#F3F4F6',

@@ -1,11 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 export default function SettingsScreen({ navigation }: any) {
   const { currentUser, logout, userName, weeklyGoal, monthlyGoal } = useAuth();
+  const { showNotification } = useNotification();
+  const { fontScale, isOnline } = useAccessibility();
+
+  // Dynamic styles based on font scale
+  const dynamicStyles = {
+    headerTitle: { fontSize: 28 * fontScale },
+    profileIconText: { fontSize: 20 * fontScale },
+    profileGreeting: { fontSize: 18 * fontScale },
+    profileSubtext: { fontSize: 14 * fontScale },
+    sectionTitle: { fontSize: 20 * fontScale },
+    statTitle: { fontSize: 18 * fontScale },
+    pieChartText: { fontSize: 16 * fontScale },
+    statDetails: { fontSize: 16 * fontScale },
+    settingLabel: { fontSize: 16 * fontScale },
+    settingSubtext: { fontSize: 13 * fontScale },
+    logoutButtonText: { fontSize: 16 * fontScale },
+    chevron: { fontSize: 18 * fontScale },
+  };
+
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
   const [frequency, setFrequency] = useState<'none' | 'daily' | 'weekly' | 'once'>('none');
@@ -55,6 +76,10 @@ export default function SettingsScreen({ navigation }: any) {
 
   const handleAccountSettings = () => {
     navigation.navigate('AccountSettings');
+  };
+
+  const handleAccessibilitySettings = () => {
+    navigation.navigate('AccessibilitySettings');
   };
 
   const handleDeleteAccount = () => {
@@ -114,31 +139,43 @@ export default function SettingsScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={[styles.headerTitle, dynamicStyles.headerTitle]}>Settings</Text>
+        {!isOnline && (
+          <View style={styles.offlineBadge}>
+            <Text style={styles.offlineBadgeText}>📴 Offline</Text>
+          </View>
+        )}
       </View>
       
       <ScrollView style={styles.contentArea} showsVerticalScrollIndicator={false}>
+        {!isOnline && (
+          <View style={styles.offlineBanner}>
+            <Text style={styles.offlineBannerText}>
+              You're offline. Settings will sync when you reconnect.
+            </Text>
+          </View>
+        )}
         {/* Profile Section */}
         <TouchableOpacity style={styles.profileSection} onPress={handleAccountSettings}>
           <View style={styles.profileBubble}>
             <View style={styles.profileIcon}>
-              <Text style={styles.profileIconText}>
+              <Text style={[styles.profileIconText, dynamicStyles.profileIconText]}>
                 {userName ? userName.charAt(0).toUpperCase() : currentUser?.email?.charAt(0).toUpperCase() || 'U'}
               </Text>
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileGreeting}>
+              <Text style={[styles.profileGreeting, dynamicStyles.profileGreeting]}>
                 Hello {userName || 'User'}!
               </Text>
-              <Text style={styles.profileSubtext}>Account Settings</Text>
+              <Text style={[styles.profileSubtext, dynamicStyles.profileSubtext]}>Account Settings</Text>
             </View>
-            <Text style={styles.chevron}>›</Text>
+            <Text style={[styles.chevron, dynamicStyles.chevron]}>›</Text>
           </View>
         </TouchableOpacity>
 
         {/* Statistics Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Statistics</Text>
+          <Text style={[styles.sectionTitle, dynamicStyles.sectionTitle]}>Statistics</Text>
           
           {/* Overall Task Completion Rate */}
           <View style={styles.statCard}>
@@ -250,6 +287,26 @@ export default function SettingsScreen({ navigation }: any) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Preferences</Text>
           
+          {/* Demo Notification Button */}
+          <TouchableOpacity 
+            style={[styles.settingItem, { backgroundColor: '#9b59b6' }]} 
+            onPress={() => {
+              showNotification(
+                '🎉 Demo Notification',
+                'This is how in-app notifications work in Tick-It!',
+                'success'
+              );
+            }}
+          >
+            <View>
+              <Text style={[styles.settingLabel, { color: '#fff' }]}>Test Notification</Text>
+              <Text style={[styles.settingSubtext, { color: '#fff', opacity: 0.9 }]}>
+                Tap to see a demo notification
+              </Text>
+            </View>
+            <Text style={[styles.chevron, { color: '#fff' }]}>🔔</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity 
             style={styles.settingItem} 
             onPress={() => navigation.navigate('NotificationSettings')}
@@ -278,6 +335,16 @@ export default function SettingsScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
+        {/* Accessibility Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Accessibility</Text>
+          
+          <TouchableOpacity style={styles.settingItem} onPress={handleAccessibilitySettings}>
+            <Text style={styles.settingLabel}>Font Size</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* About Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
@@ -292,10 +359,6 @@ export default function SettingsScreen({ navigation }: any) {
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteAccount}>
-          <Text style={styles.deleteButtonText}>Delete Account</Text>
-        </TouchableOpacity>
 
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutButtonText}>Logout</Text>
@@ -502,5 +565,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#8B7BA8',
     marginBottom: 40,
+  },
+  offlineBadge: {
+    backgroundColor: '#FF9800',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 8,
+  },
+  offlineBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  offlineBanner: {
+    backgroundColor: '#FFF3E0',
+    borderWidth: 2,
+    borderColor: '#FF9800',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  offlineBannerText: {
+    color: '#E65100',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });

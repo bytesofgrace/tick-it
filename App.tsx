@@ -3,6 +3,9 @@ import { Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AccessibilityProvider } from './contexts/AccessibilityContext';
+import { NotificationProvider } from './contexts/NotificationContext';
+import NotificationBanner from './components/NotificationBanner';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import TodoScreen from './screens/TodoScreen';
@@ -11,6 +14,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import AccountSettingsScreen from './screens/AccountSettingsScreen';
 import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
 import DataManagementScreen from './screens/DataManagementScreen';
+import AccessibilitySettingsScreen from './screens/AccessibilitySettingsScreen';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, ActivityIndicator } from 'react-native';
 import { CleanupService } from './services/CleanupService';
@@ -97,6 +101,7 @@ function AppNavigator() {
           <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
           <Stack.Screen name="DataManagement" component={DataManagementScreen} />
+          <Stack.Screen name="AccessibilitySettings" component={AccessibilitySettingsScreen} />
         </>
       ) : (
         <>
@@ -111,9 +116,14 @@ function AppNavigator() {
 export default function App() {
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <AppNavigator />
-      </NavigationContainer>
+      <AccessibilityProvider>
+        <NotificationProvider>
+          <NavigationContainer>
+            <AppNavigator />
+            <NotificationBanner />
+          </NavigationContainer>
+        </NotificationProvider>
+      </AccessibilityProvider>
     </AuthProvider>
   );
 }

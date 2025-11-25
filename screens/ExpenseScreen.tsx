@@ -11,7 +11,8 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Alert,
-  Platform
+  Platform,
+  ScrollView
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { 
@@ -26,11 +27,14 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 
 interface Person {
   id: string;
   name: string;
   amount: string;
+  paid: boolean;
 }
 
 interface Expense {
@@ -59,8 +63,40 @@ export default function ExpenseScreen() {
   const [dueTime, setDueTime] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [people, setPeople] = useState<Person[]>([{ id: '1', name: '', amount: '' }]);
+  const [people, setPeople] = useState<Person[]>([{ id: '1', name: '', amount: '', paid: false }]);
   const { currentUser } = useAuth();
+  const { showNotification } = useNotification();
+  const { fontScale } = useAccessibility();
+
+  // Dynamic styles based on font scale
+  const dynamicStyles = {
+    headerTitle: { fontSize: 28 * fontScale },
+    motivationalText: { fontSize: 14 * fontScale },
+    statNumber: { fontSize: 24 * fontScale },
+    statLabel: { fontSize: 12 * fontScale },
+    emptyTitle: { fontSize: 20 * fontScale },
+    emptyDescription: { fontSize: 14 * fontScale },
+    checkmark: { fontSize: 32 * fontScale },
+    expenseTitle: { fontSize: 20 * fontScale },
+    expenseTotal: { fontSize: 16 * fontScale },
+    expenseDescription: { fontSize: 14 * fontScale },
+    personName: { fontSize: 16 * fontScale },
+    personAmount: { fontSize: 14 * fontScale },
+    dueDateText: { fontSize: 12 * fontScale },
+    editButtonText: { fontSize: 24 * fontScale },
+    deleteButtonText: { fontSize: 24 * fontScale },
+    addButtonText: { fontSize: 24 * fontScale },
+    modalTitle: { fontSize: 20 * fontScale },
+    modalInput: { fontSize: 16 * fontScale },
+    sectionTitle: { fontSize: 18 * fontScale },
+    splitAmountText: { fontSize: 16 * fontScale },
+    totalSplitText: { fontSize: 14 * fontScale },
+    cancelButtonText: { fontSize: 16 * fontScale },
+    saveButtonText: { fontSize: 16 * fontScale },
+    datePickerButtonText: { fontSize: 16 * fontScale },
+    clearDateText: { fontSize: 14 * fontScale },
+    datePickerDoneText: { fontSize: 16 * fontScale },
+  };
 
   const motivationalPhrases = [
     "Chase every expense - your wallet will thank you!",
@@ -112,6 +148,9 @@ export default function ExpenseScreen() {
         
         setExpenses(expensesData);
         setLoading(false);
+
+        // Check for urgent expenses
+        checkForUrgentExpenses(expensesData);
       },
       (error) => {
         console.error('Firestore query error:', error);
@@ -123,9 +162,43 @@ export default function ExpenseScreen() {
     return () => unsubscribe();
   }, [currentUser]);
 
+  // Check for urgent expenses and show notifications
+  const checkForUrgentExpenses = (expensesList: Expense[]) => {
+    const now = new Date();
+    const unsettledExpenses = expensesList.filter(e => !e.settled && e.dueDate);
+
+    // Check for overdue expenses
+    const overdueExpenses = unsettledExpenses.filter(e => {
+      const due = new Date(e.dueDate!);
+      return due < now;
+    });
+
+    // Check for expenses due within 24 hours
+    const urgentExpenses = unsettledExpenses.filter(e => {
+      const due = new Date(e.dueDate!);
+      const hoursUntilDue = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
+      return hoursUntilDue > 0 && hoursUntilDue <= 24;
+    });
+
+    // Show notifications
+    if (overdueExpenses.length > 0) {
+      showNotification(
+        '💰 Overdue Expenses',
+        `${overdueExpenses.length} expense${overdueExpenses.length > 1 ? 's' : ''} past due date!`,
+        'error'
+      );
+    } else if (urgentExpenses.length > 0) {
+      showNotification(
+        '💸 Upcoming Expenses',
+        `${urgentExpenses.length} expense${urgentExpenses.length > 1 ? 's' : ''} due within 24 hours!`,
+        'warning'
+      );
+    }
+  };
+
   const addPerson = () => {
     const newId = (people.length + 1).toString();
-    setPeople([...people, { id: newId, name: '', amount: '' }]);
+    setPeople([...people, { id: newId, name: '', amount: '', paid: false }]);
   };
 
   const removePerson = (id: string) => {
@@ -155,7 +228,7 @@ export default function ExpenseScreen() {
     setTotalAmount('');
     setDescription('');
     setDueDate(null);
-    setPeople([{ id: '1', name: '', amount: '' }]);
+    setPeople([{ id: '1', name: '', amount: '', paid: false }]);
     setShowDatePicker(false);
     setEditingExpense(null);
     setModalVisible(true);
@@ -177,7 +250,12 @@ export default function ExpenseScreen() {
     } else {
       setDueTime(null);
     }
-    setPeople(expense.people.length > 0 ? expense.people : [{ id: '1', name: '', amount: '' }]);
+    // Ensure all people have paid property
+    const peopleWithPaid = expense.people.map(person => ({
+      ...person,
+      paid: person.paid !== undefined ? person.paid : false
+    }));
+    setPeople(peopleWithPaid.length > 0 ? peopleWithPaid : [{ id: '1', name: '', amount: '', paid: false }]);
     setShowDatePicker(false);
     setShowTimePicker(false);
     setEditingExpense(expense);
@@ -195,10 +273,38 @@ export default function ExpenseScreen() {
     }
   };
 
-  const handleToggleSettled = async (id: string, settled: boolean) => {
+  const handleTogglePayerPaid = async (expenseId: string, expense: Expense, payerId: string) => {
     try {
+      const updatedPeople = expense.people.map(person => 
+        person.id === payerId 
+          ? { ...person, paid: !person.paid }
+          : person
+      );
+      
+      // Check if all payers have paid
+      const allPaid = updatedPeople.every(person => person.paid);
+      
+      await updateDoc(doc(db, 'expenses', expenseId), {
+        people: updatedPeople,
+        settled: allPaid,
+        updatedAt: new Date(),
+      });
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to update payment status');
+    }
+  };
+
+  const handleToggleSettled = async (id: string, settled: boolean, expense: Expense) => {
+    try {
+      // When toggling the main checkbox, update all people's paid status
+      const updatedPeople = expense.people.map(person => ({
+        ...person,
+        paid: settled
+      }));
+      
       await updateDoc(doc(db, 'expenses', id), {
         settled,
+        people: updatedPeople,
         updatedAt: new Date(),
       });
     } catch (error: any) {
@@ -243,7 +349,7 @@ export default function ExpenseScreen() {
       setDescription('');
       setDueDate(null);
       setDueTime(null);
-      setPeople([{ id: '1', name: '', amount: '' }]);
+      setPeople([{ id: '1', name: '', amount: '', paid: false }]);
       setModalVisible(false);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to add expense');
@@ -283,7 +389,7 @@ export default function ExpenseScreen() {
       setDescription('');
       setDueDate(null);
       setDueTime(null);
-      setPeople([{ id: '1', name: '', amount: '' }]);
+      setPeople([{ id: '1', name: '', amount: '', paid: false }]);
       setEditingExpense(null);
       setModalVisible(false);
     } catch (error: any) {
@@ -348,19 +454,19 @@ export default function ExpenseScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Expense-It</Text>
-          <Text style={styles.motivationalText}>{randomPhrase}</Text>
+          <Text style={[styles.headerTitle, dynamicStyles.headerTitle]}>Expense-It</Text>
+          <Text style={[styles.motivationalText, dynamicStyles.motivationalText]}>{randomPhrase}</Text>
         </View>
 
         <View style={styles.contentArea}>
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>${Math.round(thisMonthExpenses)}</Text>
-              <Text style={styles.statLabel}>This Month</Text>
+              <Text style={[styles.statNumber, dynamicStyles.statNumber]}>${Math.round(thisMonthExpenses)}</Text>
+              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>This Month</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>${Math.round(totalOwedAmount)}</Text>
-              <Text style={styles.statLabel}>Left to Receive</Text>
+              <Text style={[styles.statNumber, dynamicStyles.statNumber]}>${Math.round(totalOwedAmount)}</Text>
+              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>Left to Receive</Text>
             </View>
           </View>
 
@@ -372,29 +478,39 @@ export default function ExpenseScreen() {
                   onPress={() => handleTogglePriority(item.id, !item.priority)} 
                   style={[styles.priorityButton, item.priority && styles.priorityButtonActive]}
                 >
-                  <Text style={[styles.priorityButtonText, item.priority && styles.priorityButtonTextActive]}>
+                  <Text style={[styles.priorityButtonText, item.priority && styles.priorityButtonTextActive, { fontSize: 20 * fontScale }]}>
                     {item.priority ? '★' : '☆'}
                   </Text>
                 </TouchableOpacity>
                 <View style={styles.expenseHeader}>
                   <TouchableOpacity 
                     style={styles.expenseContent}
-                    onPress={() => handleToggleSettled(item.id, !item.settled)}
+                    onPress={() => handleToggleSettled(item.id, !item.settled, item)}
                   >
                     <View style={[styles.checkbox, item.settled && styles.checkboxSettled]}>
-                      {item.settled && <Text style={styles.checkmark}>✓</Text>}
+                      {item.settled && <Text style={[styles.checkmark, dynamicStyles.checkmark]}>✓</Text>}
                     </View>
                     <View style={styles.expenseTextContainer}>
-                      <Text style={[styles.expenseTitle, item.settled && styles.expenseTitleSettled]}>{item.title}</Text>
-                      <Text style={[styles.expenseAmount, item.settled && styles.expenseAmountSettled]}>${item.totalAmount.toFixed(2)}</Text>
+                      <Text style={[styles.expenseTitle, item.settled && styles.expenseTitleSettled, dynamicStyles.expenseTitle]}>{item.title}</Text>
+                      <Text style={[styles.expenseAmount, item.settled && styles.expenseAmountSettled, dynamicStyles.expenseTotal]}>${item.totalAmount.toFixed(2)}</Text>
                       {item.description && (
-                        <Text style={[styles.expenseDescription, item.settled && styles.expenseDescriptionSettled]}>{item.description}</Text>
+                        <Text style={[styles.expenseDescription, item.settled && styles.expenseDescriptionSettled, dynamicStyles.expenseDescription]}>{item.description}</Text>
                       )}
                       <View style={styles.expensePeople}>
                         {item.people.map((person, index) => (
-                          <Text key={index} style={styles.personText}>
-                            {person.name}: ${person.amount}
-                          </Text>
+                          <View key={index} style={styles.personRowWithCheckbox}>
+                            <Text style={[styles.personText, person.paid && styles.personTextPaid, dynamicStyles.personAmount]}>
+                              {person.name}: ${person.amount}
+                            </Text>
+                            <TouchableOpacity 
+                              onPress={() => handleTogglePayerPaid(item.id, item, person.id)}
+                              style={styles.personCheckboxButton}
+                            >
+                              <View style={[styles.personCheckbox, person.paid && styles.checkboxSettled]}>
+                                {person.paid && <Text style={{ fontSize: 14 * fontScale }}>✓</Text>}
+                              </View>
+                            </TouchableOpacity>
+                          </View>
                         ))}
                       </View>
                     </View>
@@ -419,13 +535,13 @@ export default function ExpenseScreen() {
                       else if (isTomorrow) dateStr = `📅 Due Tomorrow${timeStr}`;
                       else dateStr = `📅 Due ${due.toLocaleDateString()}${timeStr}`;
                       
-                      return <Text style={styles.dueDateText}>{dateStr}</Text>;
+                      return <Text style={[styles.dueDateText, dynamicStyles.dueDateText]}>{dateStr}</Text>;
                     })()}
                     <TouchableOpacity onPress={() => openEditModal(item)} style={styles.editButton}>
-                      <Text style={styles.editButtonText}>✏️</Text>
+                      <Text style={[styles.editButtonText, dynamicStyles.editButtonText]}>✏️</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => handleDeleteExpense(item.id)} style={styles.deleteButton}>
-                      <Text style={styles.deleteButtonText}>🗑️</Text>
+                      <Text style={[styles.deleteButtonText, dynamicStyles.deleteButtonText]}>🗑️</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -436,14 +552,14 @@ export default function ExpenseScreen() {
             contentContainerStyle={expenses.length === 0 ? styles.emptyListContainer : undefined}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyTitle}>No expenses to chase yet!</Text>
-                <Text style={styles.emptyDescription}>Add one and start tracking your spending</Text>
+                <Text style={[styles.emptyTitle, dynamicStyles.emptyTitle]}>No expenses to chase yet!</Text>
+                <Text style={[styles.emptyDescription, dynamicStyles.emptyDescription]}>Add one and start tracking your spending</Text>
               </View>
             }
           />
 
           <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
-            <Text style={styles.addButtonText}>+</Text>
+            <Text style={[styles.addButtonText, dynamicStyles.addButtonText]}>+</Text>
           </TouchableOpacity>
         </View>
 
@@ -457,21 +573,26 @@ export default function ExpenseScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.modalContainer}>
-                  <Text style={styles.modalTitle}>
+                  <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
                     {editingExpense ? 'Edit Expense' : 'Add New Expense'}
                   </Text>
 
-                  <TextInput
-                    style={styles.modalInput}
-                    placeholder="Expense title"
-                    placeholderTextColor="#8B7BA8"
-                    value={title}
-                    onChangeText={setTitle}
-                    autoFocus
-                  />
+                  <ScrollView 
+                    style={styles.modalScrollView}
+                    showsVerticalScrollIndicator={true}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <TextInput
+                      style={[styles.modalInput, dynamicStyles.modalInput]}
+                      placeholder="Expense title"
+                      placeholderTextColor="#8B7BA8"
+                      value={title}
+                      onChangeText={setTitle}
+                      autoFocus
+                    />
 
                   <TextInput
-                    style={styles.modalInput}
+                    style={[styles.modalInput, dynamicStyles.modalInput]}
                     placeholder="Total amount ($)"
                     placeholderTextColor="#8B7BA8"
                     value={totalAmount}
@@ -479,7 +600,7 @@ export default function ExpenseScreen() {
                     keyboardType="numeric"
                   />
 
-                  <Text style={styles.sectionLabel}>Who owes you money?</Text>
+                  <Text style={[styles.sectionLabel, dynamicStyles.sectionTitle]}>Who owes you money?</Text>
                   
                   {people.map((person, index) => (
                     <View key={person.id} style={styles.personContainer}>
@@ -623,6 +744,7 @@ export default function ExpenseScreen() {
                     multiline
                     numberOfLines={3}
                   />
+                  </ScrollView>
 
                   <View style={styles.modalActions}>
                     <TouchableOpacity
@@ -775,8 +897,12 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '100%',
     maxWidth: 400,
+    maxHeight: '90%',
     borderWidth: 2,
     borderColor: '#CEE476',
+  },
+  modalScrollView: {
+    maxHeight: 500,
   },
   modalTitle: {
     fontSize: 20,
@@ -1043,12 +1169,43 @@ const styles = StyleSheet.create({
     color: '#8B7BA8',
   },
   expensePeople: {
+    marginTop: 12,
     marginBottom: 4,
   },
+  personRow: {
+    marginBottom: 6,
+  },
+  personRowWithCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    paddingRight: 40,
+  },
+  personCheckbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#8B7BA8',
+    borderRadius: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  personCheckmark: {
+    fontSize: 16,
+    color: '#6C55BE',
+    fontWeight: 'bold',
+  },
   personText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#8B7BA8',
-    marginBottom: 2,
+  },
+  personTextPaid: {
+    color: '#B0A3C6',
+    textDecorationLine: 'line-through',
+  },
+  personCheckboxButton: {
+    padding: 4,
   },
   dueDateText: {
     fontSize: 12,
@@ -1059,7 +1216,7 @@ const styles = StyleSheet.create({
   expenseActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 8,
   },
   actionButtons: {

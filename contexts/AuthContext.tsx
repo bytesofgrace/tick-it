@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User, updatePassword, sendPasswordResetEmail } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../firebaseConfig';
 
 interface AuthContextType {
@@ -11,7 +12,7 @@ interface AuthContextType {
   loading: boolean;
   userName: string;
   updateUserName: (name: string) => Promise<void>;
-  changePassword: (newPassword: string) => Promise<void>;
+  changePassword: (newPassword: string, currentPassword: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   weeklyGoal: number;
   monthlyGoal: number;
@@ -35,8 +36,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [weeklyGoal, setWeeklyGoal] = useState(80);
   const [monthlyGoal, setMonthlyGoal] = useState(75);
 
+  // Save user credentials to AsyncStorage
+  const saveCredentials = async (email: string, password: string) => {
+    try {
+      await AsyncStorage.setItem('@auth_email', email);
+      await AsyncStorage.setItem('@auth_password', password);
+    } catch (error) {
+      console.error('Error saving credentials:', error);
+    }
+  };
+
+  // Load and auto-login with saved credentials
+  const loadAndLoginWithSavedCredentials = async () => {
+    try {
+      const email = await AsyncStorage.getItem('@auth_email');
+      const password = await AsyncStorage.getItem('@auth_password');
+      
+      if (email && password) {
+        console.log('Found saved credentials, attempting auto-login...');
+        await signInWithEmailAndPassword(auth, email, password);
+        console.log('Auto-login successful');
+        return true;
+      }
+    } catch (error) {
+      console.error('Auto-login failed:', error);
+      // Clear invalid credentials
+      await AsyncStorage.removeItem('@auth_email');
+      await AsyncStorage.removeItem('@auth_password');
+    }
+    return false;
+  };
+
+  // Clear saved credentials
+  const clearCredentials = async () => {
+    try {
+      await AsyncStorage.removeItem('@auth_email');
+      await AsyncStorage.removeItem('@auth_password');
+    } catch (error) {
+      console.error('Error clearing credentials:', error);
+    }
+  };
+
   useEffect(() => {
+    let isSubscribed = true;
+
+    // Try to restore session on app start
+    const initAuth = async () => {
+      // First, try to restore with saved credentials
+      const restored = await loadAndLoginWithSavedCredentials();
+      
+      // If no saved credentials or restore failed, mark as loaded
+      if (!restored && isSubscribed) {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+
+    // Listen to auth state changes
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!isSubscribed) return;
+
       setCurrentUser(user);
       if (user) {
         // Load user profile data
@@ -59,20 +119,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      isSubscribed = false;
+      unsubscribe();
+    };
   }, []);
 
   const register = async (email: string, password: string) => {
     await createUserWithEmailAndPassword(auth, email, password);
+    // Save credentials for persistence
+    await saveCredentials(email, password);
   };
 
   const login = async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
+    // Save credentials for persistence
+    await saveCredentials(email, password);
   };
 
   const logout = async () => {
     try {
       await signOut(auth);
+      // Clear saved credentials on logout
+      await clearCredentials();
     } catch (error) {
       console.error('Logout error:', error);
       throw error;
@@ -96,13 +165,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const changePassword = async (newPassword: string) => {
-    if (!currentUser) {
+  const changePassword = async (newPassword: string, currentPassword: string) => {
+    if (!currentUser || !currentUser.email) {
       throw new Error('No authenticated user');
     }
     
     try {
+      // Reauthenticate user with current password
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      
+      // Now update the password
       await updatePassword(currentUser, newPassword);
+      
+      // Update saved credentials with new password
+      await saveCredentials(currentUser.email, newPassword);
     } catch (error) {
       console.error('Error changing password:', error);
       throw error;

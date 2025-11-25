@@ -11,17 +11,19 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 
 interface RegisterScreenProps {
   navigation: any;
 }
 
 export default function RegisterScreen({ navigation }: RegisterScreenProps) {
+  const { fontScale } = useAccessibility();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signup } = useAuth();
+  const { register } = useAuth();
 
   async function handleRegister() {
     if (!email || !password || !confirmPassword) {
@@ -56,11 +58,25 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
 
     try {
       setLoading(true);
-      await signup(email, password);
+      await register(email, password);
       Alert.alert('Success', 'Account created successfully. Time to tick-it!');
     } catch (error: any) {
       console.error(error);
-      Alert.alert('Registration Failed', error.message || 'An error occurred during registration');
+      
+      // Handle specific Firebase error codes
+      let errorMessage = 'An error occurred during registration';
+      
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already registered. Please use a different email or try logging in.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address format.';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password is too weak. Please use a stronger password.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Registration Failed', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -104,7 +120,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
               autoComplete="password-new"
             />
             <Text style={styles.passwordHint}>
-              Must contain: uppercase, lowercase & number (min. 8 characters)
+              Must contain: uppercase, lowercase & number{'\n'}(min. 8 characters)
             </Text>
           </View>
 

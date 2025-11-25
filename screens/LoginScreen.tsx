@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 import { auth } from '../firebaseConfig';
 import { sendPasswordResetEmail } from 'firebase/auth';
 
@@ -23,6 +24,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {   // def
   const [password, setPassword] = useState('');     // def set_email(new_value):
   const [loading, setLoading] = useState(false);    //    global email
   const { login } = useAuth();
+  const { fontScale } = useAccessibility();
   
   async function handleForgotPassword() {
     if (!email) {

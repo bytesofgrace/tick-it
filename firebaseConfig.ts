@@ -18,6 +18,7 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Auth
+// Note: Auth persistence is handled in AuthContext.tsx using AsyncStorage
 const auth = getAuth(app);
 
 // Initialize Firestore

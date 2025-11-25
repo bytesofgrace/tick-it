@@ -17,9 +17,12 @@
       "supportsTablet": true,
       "infoPlist": {
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
-        ]
-      }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.bytesofgrace.tickit"
     },
     "android": {
       "adaptiveIcon": {
@@ -35,6 +38,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "67350a72-e6f3-4b36-94bb-7b6e35d1cd19"
+      }
     }
   }
 }
