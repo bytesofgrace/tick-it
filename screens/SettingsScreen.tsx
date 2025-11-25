@@ -265,6 +265,17 @@ export default function SettingsScreen({ navigation }: any) {
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.settingItem} 
+            onPress={() => navigation.navigate('DataManagement')}
+          >
+            <View>
+              <Text style={styles.settingLabel}>Data Management</Text>
+              <Text style={styles.settingSubtext}>Auto-cleanup & bulk actions</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* About Section */}
@@ -462,7 +473,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   deleteButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#CEE476',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -470,19 +481,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   deleteButtonText: {
-    color: '#FFFFFF',
+    color: '#6C55BE',
     fontSize: 16,
     fontWeight: '700',
   },
   logoutButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#CEE476',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginBottom: 20,
   },
   logoutButtonText: {
-    color: '#FFFFFF',
+    color: '#6C55BE',
     fontSize: 16,
     fontWeight: '700',
   },

@@ -221,7 +221,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>‹ Back</Text>
+          <Text style={styles.backButtonText}>‹</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notification Settings</Text>
         <View style={styles.placeholder} />

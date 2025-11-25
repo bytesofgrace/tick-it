@@ -66,13 +66,25 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
     const isToday = due.toDateString() === today.toDateString();
     const isTomorrow = due.toDateString() === tomorrow.toDateString();
     
-    if (isToday) return '📅 Due Today';
-    if (isTomorrow) return '📅 Due Tomorrow';
-    return `📅 Due ${due.toLocaleDateString()}`;
+    // Check if time is set (not midnight)
+    const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0;
+    const timeStr = hasTime ? ` at ${due.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : '';
+    
+    if (isToday) return `📅 Due Today${timeStr}`;
+    if (isTomorrow) return `📅 Due Tomorrow${timeStr}`;
+    return `📅 Due ${due.toLocaleDateString()}${timeStr}`;
   };
 
   return (
     <View style={[styles.todoItem, todo.priority && styles.todoItemPriority, getUrgencyStyle()]}>
+      <TouchableOpacity 
+        onPress={() => onTogglePriority(todo.id, !todo.priority)} 
+        style={[styles.priorityButton, todo.priority && styles.priorityButtonActive]}
+      >
+        <Text style={[styles.priorityButtonText, todo.priority && styles.priorityButtonTextActive]}>
+          {todo.priority ? '★' : '☆'}
+        </Text>
+      </TouchableOpacity>
       <View style={styles.todoHeader}>
         <TouchableOpacity 
           style={styles.todoContent}
@@ -90,27 +102,21 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
                 {todo.description}
               </Text>
             )}
-            {todo.dueDate && !todo.completed && (
-              <Text style={styles.dueDateText}>{formatDueDate()}</Text>
-            )}
           </View>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={() => onTogglePriority(todo.id, !todo.priority)} 
-          style={[styles.priorityButton, todo.priority && styles.priorityButtonActive]}
-        >
-          <Text style={[styles.priorityButtonText, todo.priority && styles.priorityButtonTextActive]}>
-            {todo.priority ? '★' : '☆'}
-          </Text>
         </TouchableOpacity>
       </View>
       <View style={styles.todoActions}>
-        <TouchableOpacity onPress={() => onEdit(todo)} style={styles.editButton}>
-          <Text style={styles.editButtonText}>✏️</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => onDelete(todo.id)} style={styles.deleteButton}>
-          <Text style={styles.deleteButtonText}>🗑️</Text>
-        </TouchableOpacity>
+        <View style={styles.actionButtons}>
+          {todo.dueDate && !todo.completed && (
+            <Text style={styles.dueDateText}>{formatDueDate()}</Text>
+          )}
+          <TouchableOpacity onPress={() => onEdit(todo)} style={styles.editButton}>
+            <Text style={styles.editButtonText}>✏️</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onDelete(todo.id)} style={styles.deleteButton}>
+            <Text style={styles.deleteButtonText}>🗑️</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -124,7 +130,9 @@ export default function TodoScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState<Date | null>(null);
+  const [dueTime, setDueTime] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiRef = useRef<any>(null);
   const { currentUser, logout } = useAuth();
@@ -202,12 +210,19 @@ export default function TodoScreen() {
     }
 
     try {
+      // Combine date and time if both are set
+      let finalDueDate = dueDate;
+      if (dueDate && dueTime) {
+        finalDueDate = new Date(dueDate);
+        finalDueDate.setHours(dueTime.getHours(), dueTime.getMinutes(), 0, 0);
+      }
+
       await addDoc(collection(db, 'todos'), {
         title: title.trim(),
         description: description.trim(),
         completed: false,
         priority: false,
-        dueDate: dueDate || null,
+        dueDate: finalDueDate || null,
         createdAt: new Date(),
         updatedAt: new Date(),
         userId: currentUser?.uid,
@@ -215,6 +230,7 @@ export default function TodoScreen() {
       setTitle('');
       setDescription('');
       setDueDate(null);
+      setDueTime(null);
       setModalVisible(false);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to add task');
@@ -228,15 +244,23 @@ export default function TodoScreen() {
     }
 
     try {
+      // Combine date and time if both are set
+      let finalDueDate = dueDate;
+      if (dueDate && dueTime) {
+        finalDueDate = new Date(dueDate);
+        finalDueDate.setHours(dueTime.getHours(), dueTime.getMinutes(), 0, 0);
+      }
+
       await updateDoc(doc(db, 'todos', editingTodo.id), {
         title: title.trim(),
         description: description.trim(),
-        dueDate: dueDate || null,
+        dueDate: finalDueDate || null,
         updatedAt: new Date(),
       });
       setTitle('');
       setDescription('');
       setDueDate(null);
+      setDueTime(null);
       setEditingTodo(null);
       setModalVisible(false);
     } catch (error: any) {
@@ -256,10 +280,20 @@ export default function TodoScreen() {
         }
       }
       
-      await updateDoc(doc(db, 'todos', id), {
+      const updateData: any = {
         completed,
         updatedAt: new Date(),
-      });
+      };
+      
+      // Add completedAt timestamp when marking as complete
+      if (completed) {
+        updateData.completedAt = new Date();
+      } else {
+        // Remove completedAt when uncompleting
+        updateData.completedAt = null;
+      }
+      
+      await updateDoc(doc(db, 'todos', id), updateData);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to update task');
     }
@@ -310,7 +344,19 @@ export default function TodoScreen() {
     setTitle(todo.title);
     setDescription(todo.description || '');
     setDueDate(todo.dueDate || null);
+    // Extract time from dueDate if it exists
+    if (todo.dueDate) {
+      const hasTime = todo.dueDate.getHours() !== 0 || todo.dueDate.getMinutes() !== 0;
+      if (hasTime) {
+        setDueTime(todo.dueDate);
+      } else {
+        setDueTime(null);
+      }
+    } else {
+      setDueTime(null);
+    }
     setShowDatePicker(false);
+    setShowTimePicker(false);
     setEditingTodo(todo);
     setModalVisible(true);
   };
@@ -456,7 +502,10 @@ export default function TodoScreen() {
                   {dueDate && (
                     <TouchableOpacity
                       style={styles.clearDateButton}
-                      onPress={() => setDueDate(null)}
+                      onPress={() => {
+                        setDueDate(null);
+                        setDueTime(null);
+                      }}
                     >
                       <Text style={styles.clearDateText}>Clear Date</Text>
                     </TouchableOpacity>
@@ -484,12 +533,64 @@ export default function TodoScreen() {
                     </View>
                   )}
 
+                  {dueDate && (
+                    <>
+                      <Text style={styles.sectionLabel}>Due Time</Text>
+                      
+                      <TouchableOpacity
+                        style={styles.datePickerButton}
+                        onPress={() => setShowTimePicker(true)}
+                      >
+                        <Text style={styles.datePickerButtonText}>
+                          {dueTime ? `🕐 ${dueTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : '🕐 Select Time (None)'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {dueTime && (
+                        <TouchableOpacity
+                          style={styles.clearDateButton}
+                          onPress={() => setDueTime(null)}
+                        >
+                          <Text style={styles.clearDateText}>Clear Time</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {showTimePicker && (
+                        <View style={styles.datePickerContainer}>
+                          <DateTimePicker
+                            value={dueTime || new Date()}
+                            mode="time"
+                            is24Hour={false}
+                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                            onChange={(event, selectedTime) => {
+                              setShowTimePicker(Platform.OS === 'ios');
+                              if (selectedTime) {
+                                setDueTime(selectedTime);
+                              }
+                            }}
+                            textColor="#6C55BE"
+                            themeVariant="light"
+                          />
+                          {Platform.OS === 'ios' && (
+                            <TouchableOpacity
+                              style={styles.datePickerDoneButton}
+                              onPress={() => setShowTimePicker(false)}
+                            >
+                              <Text style={styles.datePickerDoneText}>Done</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    </>
+                  )}
+
                   <View style={styles.modalActions}>
                     <TouchableOpacity
                       style={[styles.modalButton, styles.cancelButton]}
                       onPress={() => {
                         Keyboard.dismiss();
                         setShowDatePicker(false);
+                        setShowTimePicker(false);
                         setModalVisible(false);
                       }}
                     >
@@ -700,13 +801,23 @@ const styles = StyleSheet.create({
   todoActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   priorityButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
+    zIndex: 1,
   },
   priorityButtonActive: {
     backgroundColor: '#CEE476',
@@ -827,8 +938,8 @@ const styles = StyleSheet.create({
   dueDateText: {
     fontSize: 12,
     color: '#6C55BE',
-    marginTop: 4,
     fontWeight: '600',
+    marginRight: 8,
   },
   sectionLabel: {
     fontSize: 14,
@@ -873,7 +984,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   clearDateButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#6C55BE',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,

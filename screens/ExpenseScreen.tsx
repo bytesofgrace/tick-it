@@ -41,6 +41,7 @@ interface Expense {
   dueDate?: Date;
   description: string;
   priority: boolean;
+  settled: boolean;
   createdAt: Date;
   updatedAt: Date;
   userId: string;
@@ -55,7 +56,9 @@ export default function ExpenseScreen() {
   const [totalAmount, setTotalAmount] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState<Date | null>(null);
+  const [dueTime, setDueTime] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [people, setPeople] = useState<Person[]>([{ id: '1', name: '', amount: '' }]);
   const { currentUser } = useAuth();
 
@@ -92,6 +95,7 @@ export default function ExpenseScreen() {
             dueDate: data.dueDate ? data.dueDate.toDate() : undefined,
             description: data.description,
             priority: data.priority || false,
+            settled: data.settled || false,
             createdAt: data.createdAt.toDate(),
             updatedAt: data.updatedAt.toDate(),
             userId: data.userId,
@@ -162,8 +166,20 @@ export default function ExpenseScreen() {
     setTotalAmount(expense.totalAmount.toString());
     setDescription(expense.description || '');
     setDueDate(expense.dueDate || null);
+    // Extract time from dueDate if it exists
+    if (expense.dueDate) {
+      const hasTime = expense.dueDate.getHours() !== 0 || expense.dueDate.getMinutes() !== 0;
+      if (hasTime) {
+        setDueTime(expense.dueDate);
+      } else {
+        setDueTime(null);
+      }
+    } else {
+      setDueTime(null);
+    }
     setPeople(expense.people.length > 0 ? expense.people : [{ id: '1', name: '', amount: '' }]);
     setShowDatePicker(false);
+    setShowTimePicker(false);
     setEditingExpense(expense);
     setModalVisible(true);
   };
@@ -176,6 +192,17 @@ export default function ExpenseScreen() {
       });
     } catch (error: any) {
       Alert.alert('Error', 'Failed to update priority');
+    }
+  };
+
+  const handleToggleSettled = async (id: string, settled: boolean) => {
+    try {
+      await updateDoc(doc(db, 'expenses', id), {
+        settled,
+        updatedAt: new Date(),
+      });
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to update settled status');
     }
   };
 
@@ -192,13 +219,21 @@ export default function ExpenseScreen() {
     }
 
     try {
+      // Combine date and time if both are set
+      let finalDueDate = dueDate;
+      if (dueDate && dueTime) {
+        finalDueDate = new Date(dueDate);
+        finalDueDate.setHours(dueTime.getHours(), dueTime.getMinutes(), 0, 0);
+      }
+
       await addDoc(collection(db, 'expenses'), {
         title: title.trim(),
         totalAmount: parseFloat(totalAmount),
         people: validPeople,
-        dueDate: dueDate || null,
+        dueDate: finalDueDate || null,
         description: description.trim(),
         priority: false,
+        settled: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         userId: currentUser?.uid,
@@ -207,6 +242,7 @@ export default function ExpenseScreen() {
       setTotalAmount('');
       setDescription('');
       setDueDate(null);
+      setDueTime(null);
       setPeople([{ id: '1', name: '', amount: '' }]);
       setModalVisible(false);
     } catch (error: any) {
@@ -227,11 +263,18 @@ export default function ExpenseScreen() {
     }
 
     try {
+      // Combine date and time if both are set
+      let finalDueDate = dueDate;
+      if (dueDate && dueTime) {
+        finalDueDate = new Date(dueDate);
+        finalDueDate.setHours(dueTime.getHours(), dueTime.getMinutes(), 0, 0);
+      }
+
       await updateDoc(doc(db, 'expenses', editingExpense.id), {
         title: title.trim(),
         totalAmount: parseFloat(totalAmount),
         people: validPeople,
-        dueDate: dueDate || null,
+        dueDate: finalDueDate || null,
         description: description.trim(),
         updatedAt: new Date(),
       });
@@ -239,6 +282,7 @@ export default function ExpenseScreen() {
       setTotalAmount('');
       setDescription('');
       setDueDate(null);
+      setDueTime(null);
       setPeople([{ id: '1', name: '', amount: '' }]);
       setEditingExpense(null);
       setModalVisible(false);
@@ -324,42 +368,66 @@ export default function ExpenseScreen() {
             data={expenses}
             renderItem={({ item }) => (
               <View style={[styles.expenseItem, item.priority && styles.expenseItemPriority]}>
-                <View style={styles.expenseHeader}>
-                  <View style={styles.expenseMainInfo}>
-                    <Text style={styles.expenseTitle}>{item.title}</Text>
-                    <Text style={styles.expenseAmount}>${item.totalAmount.toFixed(2)}</Text>
-                  </View>
-                  <TouchableOpacity 
-                    onPress={() => handleTogglePriority(item.id, !item.priority)} 
-                    style={[styles.priorityButton, item.priority && styles.priorityButtonActive]}
-                  >
-                    <Text style={[styles.priorityButtonText, item.priority && styles.priorityButtonTextActive]}>
-                      {item.priority ? '★' : '☆'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                {item.description && (
-                  <Text style={styles.expenseDescription}>{item.description}</Text>
-                )}
-                <View style={styles.expensePeople}>
-                  {item.people.map((person, index) => (
-                    <Text key={index} style={styles.personText}>
-                      {person.name}: ${person.amount}
-                    </Text>
-                  ))}
-                </View>
-                {item.dueDate && (
-                  <Text style={styles.dueDateText}>
-                    📅 Due {item.dueDate.toLocaleDateString()}
+                <TouchableOpacity 
+                  onPress={() => handleTogglePriority(item.id, !item.priority)} 
+                  style={[styles.priorityButton, item.priority && styles.priorityButtonActive]}
+                >
+                  <Text style={[styles.priorityButtonText, item.priority && styles.priorityButtonTextActive]}>
+                    {item.priority ? '★' : '☆'}
                   </Text>
-                )}
+                </TouchableOpacity>
+                <View style={styles.expenseHeader}>
+                  <TouchableOpacity 
+                    style={styles.expenseContent}
+                    onPress={() => handleToggleSettled(item.id, !item.settled)}
+                  >
+                    <View style={[styles.checkbox, item.settled && styles.checkboxSettled]}>
+                      {item.settled && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <View style={styles.expenseTextContainer}>
+                      <Text style={[styles.expenseTitle, item.settled && styles.expenseTitleSettled]}>{item.title}</Text>
+                      <Text style={[styles.expenseAmount, item.settled && styles.expenseAmountSettled]}>${item.totalAmount.toFixed(2)}</Text>
+                      {item.description && (
+                        <Text style={[styles.expenseDescription, item.settled && styles.expenseDescriptionSettled]}>{item.description}</Text>
+                      )}
+                      <View style={styles.expensePeople}>
+                        {item.people.map((person, index) => (
+                          <Text key={index} style={styles.personText}>
+                            {person.name}: ${person.amount}
+                          </Text>
+                        ))}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.expenseActions}>
-                  <TouchableOpacity onPress={() => openEditModal(item)} style={styles.editButton}>
-                    <Text style={styles.editButtonText}>✏️</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeleteExpense(item.id)} style={styles.deleteButton}>
-                    <Text style={styles.deleteButtonText}>🗑️</Text>
-                  </TouchableOpacity>
+                  <View style={styles.actionButtons}>
+                    {item.dueDate && !item.settled && (() => {
+                      const due = new Date(item.dueDate);
+                      const today = new Date();
+                      const tomorrow = new Date(today);
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      
+                      const isToday = due.toDateString() === today.toDateString();
+                      const isTomorrow = due.toDateString() === tomorrow.toDateString();
+                      
+                      const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0;
+                      const timeStr = hasTime ? ` at ${due.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : '';
+                      
+                      let dateStr = '';
+                      if (isToday) dateStr = `📅 Due Today${timeStr}`;
+                      else if (isTomorrow) dateStr = `📅 Due Tomorrow${timeStr}`;
+                      else dateStr = `📅 Due ${due.toLocaleDateString()}${timeStr}`;
+                      
+                      return <Text style={styles.dueDateText}>{dateStr}</Text>;
+                    })()}
+                    <TouchableOpacity onPress={() => openEditModal(item)} style={styles.editButton}>
+                      <Text style={styles.editButtonText}>✏️</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteExpense(item.id)} style={styles.deleteButton}>
+                      <Text style={styles.deleteButtonText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
@@ -464,7 +532,10 @@ export default function ExpenseScreen() {
                   {dueDate && (
                     <TouchableOpacity
                       style={styles.clearDateButton}
-                      onPress={() => setDueDate(null)}
+                      onPress={() => {
+                        setDueDate(null);
+                        setDueTime(null);
+                      }}
                     >
                       <Text style={styles.clearDateText}>Clear Date</Text>
                     </TouchableOpacity>
@@ -492,6 +563,57 @@ export default function ExpenseScreen() {
                     </View>
                   )}
 
+                  {dueDate && (
+                    <>
+                      <Text style={styles.sectionLabel}>Due Time</Text>
+                      
+                      <TouchableOpacity
+                        style={styles.datePickerButton}
+                        onPress={() => setShowTimePicker(true)}
+                      >
+                        <Text style={styles.datePickerButtonText}>
+                          {dueTime ? `🕐 ${dueTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : '🕐 Select Time'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {dueTime && (
+                        <TouchableOpacity
+                          style={styles.clearDateButton}
+                          onPress={() => setDueTime(null)}
+                        >
+                          <Text style={styles.clearDateText}>Clear Time</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {showTimePicker && (
+                        <View style={styles.datePickerContainer}>
+                          <DateTimePicker
+                            value={dueTime || new Date()}
+                            mode="time"
+                            is24Hour={false}
+                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                            onChange={(event, selectedTime) => {
+                              setShowTimePicker(Platform.OS === 'ios');
+                              if (selectedTime) {
+                                setDueTime(selectedTime);
+                              }
+                            }}
+                            textColor="#6C55BE"
+                            themeVariant="light"
+                          />
+                          {Platform.OS === 'ios' && (
+                            <TouchableOpacity
+                              style={styles.datePickerDoneButton}
+                              onPress={() => setShowTimePicker(false)}
+                            >
+                              <Text style={styles.datePickerDoneText}>Done</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    </>
+                  )}
+
                   <TextInput
                     style={[styles.modalInput, styles.descriptionInput]}
                     placeholder="Description"
@@ -508,6 +630,7 @@ export default function ExpenseScreen() {
                       onPress={() => {
                         Keyboard.dismiss();
                         setShowDatePicker(false);
+                        setShowTimePicker(false);
                         setModalVisible(false);
                       }}
                     >
@@ -696,7 +819,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   removePersonButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#6C55BE',
     width: 30,
     height: 30,
     borderRadius: 15,
@@ -750,12 +873,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   clearDateButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EF4444',
-    paddingVertical: 8,
+    backgroundColor: '#6C55BE',
     paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 8,
-    marginBottom: 16,
+    alignItems: 'center',
+    marginBottom: 12,
   },
   clearDateText: {
     color: '#FFFFFF',
@@ -839,20 +962,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  expenseMainInfo: {
-    flex: 1,
+  expenseContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginRight: 12,
+    flex: 1,
+  },
+  checkbox: {
+    width: 40,
+    height: 40,
+    borderWidth: 2,
+    borderColor: '#CEE476',
+    borderRadius: 10,
+    marginRight: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  checkboxSettled: {
+    backgroundColor: '#CEE476',
+  },
+  checkmark: {
+    color: '#6C55BE',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  expenseTextContainer: {
+    flex: 1,
   },
   priorityButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
+    zIndex: 1,
   },
   priorityButtonActive: {
     backgroundColor: '#CEE476',
@@ -866,23 +1013,37 @@ const styles = StyleSheet.create({
     color: '#6C55BE',
   },
   expenseTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: '#6C55BE',
-    flex: 1,
+    marginBottom: 4,
+  },
+  expenseTitleSettled: {
+    textDecorationLine: 'line-through',
+    color: '#8B7BA8',
   },
   expenseAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#6C55BE',
+    marginBottom: 4,
+  },
+  expenseAmountSettled: {
+    textDecorationLine: 'line-through',
+    color: '#8B7BA8',
   },
   expenseDescription: {
     fontSize: 14,
     color: '#6C55BE',
+    lineHeight: 20,
     marginBottom: 8,
   },
+  expenseDescriptionSettled: {
+    textDecorationLine: 'line-through',
+    color: '#8B7BA8',
+  },
   expensePeople: {
-    marginBottom: 8,
+    marginBottom: 4,
   },
   personText: {
     fontSize: 12,
@@ -893,11 +1054,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6C55BE',
     fontWeight: '600',
-    marginBottom: 8,
+    marginRight: 8,
   },
   expenseActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   editButton: {

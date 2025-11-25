@@ -10,8 +10,11 @@ import ExpenseScreen from './screens/ExpenseScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import AccountSettingsScreen from './screens/AccountSettingsScreen';
 import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
+import DataManagementScreen from './screens/DataManagementScreen';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, ActivityIndicator } from 'react-native';
+import { CleanupService } from './services/CleanupService';
+import { useEffect } from 'react';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -64,6 +67,20 @@ function TabNavigator() {
 function AppNavigator() {
   const { currentUser, loading } = useAuth();
 
+  // Run automatic cleanup when user logs in
+  useEffect(() => {
+    if (currentUser) {
+      // Run cleanup in the background
+      CleanupService.runAutoCleanup(currentUser.uid).then((results) => {
+        if (results.tasks > 0 || results.expenses > 0) {
+          console.log(`Auto-cleanup: Deleted ${results.tasks} tasks and ${results.expenses} expenses`);
+        }
+      }).catch((error) => {
+        console.error('Auto-cleanup error:', error);
+      });
+    }
+  }, [currentUser]);
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#6C55BE' }}>
@@ -79,6 +96,7 @@ function AppNavigator() {
           <Stack.Screen name="MainTabs" component={TabNavigator} />
           <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+          <Stack.Screen name="DataManagement" component={DataManagementScreen} />
         </>
       ) : (
         <>

@@ -10,6 +10,8 @@ A modern, beautiful todo list web app built with Expo and Firebase. Manage your 
 - **CRUD Operations**: Create, read, update, and delete todos
 - **Task Management**: Mark todos as complete/incomplete
 - **Smart Notifications**: Flexible reminders (daily, weekly, or one-time) with custom times
+- **Auto-Cleanup**: Automatic deletion of completed tasks (24h) and old expenses (30 days)
+- **Bulk Actions**: Delete all completed tasks or old expenses with one tap
 - **Statistics**: View total, active, and completed task counts
 - **Responsive**: Works great on web, iOS, and Android
 
