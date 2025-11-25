@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   collection, 
   addDoc, 
@@ -193,6 +194,7 @@ export default function TodoScreen() {
   const [subtasks, setSubtasks] = useState<{id: string; text: string; completed: boolean}[]>([]);
   const [newSubtaskText, setNewSubtaskText] = useState('');
   const [showConfetti, setShowConfetti] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const confettiRef = useRef<any>(null);
   const { currentUser, logout } = useAuth();
   const { showNotification } = useNotification();
@@ -243,6 +245,69 @@ export default function TodoScreen() {
   const [randomPhrase] = useState(() => 
     motivationalPhrases[Math.floor(Math.random() * motivationalPhrases.length)]
   );
+
+  // Auto-save draft to AsyncStorage
+  useEffect(() => {
+    if (!modalVisible) return;
+
+    const saveDraft = async () => {
+      try {
+        const draft = {
+          title,
+          description,
+          dueDate: dueDate?.toISOString(),
+          dueTime: dueTime?.toISOString(),
+          subtasks,
+          editingTodoId: editingTodo?.id || null,
+        };
+        await AsyncStorage.setItem('@todo_draft', JSON.stringify(draft));
+        console.log('💾 Draft auto-saved');
+      } catch (error) {
+        console.error('Failed to save draft:', error);
+      }
+    };
+
+    // Save draft after 1 second of changes
+    const timeoutId = setTimeout(saveDraft, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [title, description, dueDate, dueTime, subtasks, modalVisible, editingTodo]);
+
+  // Load draft on component mount
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const draftJson = await AsyncStorage.getItem('@todo_draft');
+        if (draftJson) {
+          const draft = JSON.parse(draftJson);
+          // Only restore if it's for a new todo (not editing)
+          if (!draft.editingTodoId && !editingTodo) {
+            setTitle(draft.title || '');
+            setDescription(draft.description || '');
+            setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
+            setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
+            setSubtasks(draft.subtasks || []);
+            setDraftRestored(true);
+            console.log('📝 Draft restored');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load draft:', error);
+      }
+    };
+
+    loadDraft();
+  }, []);
+
+  // Clear draft after successful save
+  const clearDraft = async () => {
+    try {
+      await AsyncStorage.removeItem('@todo_draft');
+      setDraftRestored(false);
+      console.log('🗑️ Draft cleared');
+    } catch (error) {
+      console.error('Failed to clear draft:', error);
+    }
+  };
 
   useEffect(() => {
     console.log('Current user:', currentUser?.uid);
@@ -368,6 +433,7 @@ export default function TodoScreen() {
       setSubtasks([]);
       setNewSubtaskText('');
       setModalVisible(false);
+      await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
       Alert.alert('Error', 'Failed to add task');
     }
@@ -402,6 +468,7 @@ export default function TodoScreen() {
       setNewSubtaskText('');
       setEditingTodo(null);
       setModalVisible(false);
+      await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
       Alert.alert('Error', 'Failed to update task');
     }
@@ -470,14 +537,68 @@ export default function TodoScreen() {
     );
   };
 
-  const openAddModal = () => {
+  const openAddModal = async () => {
+    // Check if there's a draft
+    try {
+      const draftJson = await AsyncStorage.getItem('@todo_draft');
+      if (draftJson) {
+        const draft = JSON.parse(draftJson);
+        // Only show restore option if it's not an edit draft and has content
+        if (!draft.editingTodoId && (draft.title || draft.description || draft.subtasks?.length > 0)) {
+          Alert.alert(
+            'Draft Found',
+            'You have an unsaved draft. Would you like to restore it?',
+            [
+              {
+                text: 'Discard',
+                style: 'destructive',
+                onPress: () => {
+                  clearDraft();
+                  setTitle('');
+                  setDescription('');
+                  setDueDate(null);
+                  setDueTime(null);
+                  setSubtasks([]);
+                  setNewSubtaskText('');
+                  setShowDatePicker(false);
+                  setEditingTodo(null);
+                  setModalVisible(true);
+                }
+              },
+              {
+                text: 'Restore',
+                onPress: () => {
+                  setTitle(draft.title || '');
+                  setDescription(draft.description || '');
+                  setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
+                  setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
+                  setSubtasks(draft.subtasks || []);
+                  setNewSubtaskText('');
+                  setShowDatePicker(false);
+                  setEditingTodo(null);
+                  setDraftRestored(true);
+                  setModalVisible(true);
+                }
+              }
+            ]
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check for draft:', error);
+    }
+
+    // No draft or error - open fresh modal
     setTitle('');
     setDescription('');
     setDueDate(null);
+    setDueTime(null);
     setSubtasks([]);
     setNewSubtaskText('');
     setShowDatePicker(false);
     setEditingTodo(null);
+    setDraftRestored(false);
     setModalVisible(true);
   };
 
@@ -623,9 +744,16 @@ export default function TodoScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.modalContainer}>
-                  <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
-                    {editingTodo ? 'Edit Task' : 'Add New Task'}
-                  </Text>
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
+                      {editingTodo ? 'Edit Task' : 'Add New Task'}
+                    </Text>
+                    {draftRestored && !editingTodo && (
+                      <View style={styles.draftBadge}>
+                        <Text style={styles.draftBadgeText}>📝 Draft</Text>
+                      </View>
+                    )}
+                  </View>
                   
                   <ScrollView 
                     style={styles.modalScrollView}
@@ -1127,12 +1255,30 @@ const styles = StyleSheet.create({
   modalScrollView: {
     maxHeight: 500,
   },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 8,
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#6C55BE',
-    marginBottom: 20,
-    textAlign: 'center',
+  },
+  draftBadge: {
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FF9800',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  draftBadgeText: {
+    color: '#E65100',
+    fontSize: 11,
+    fontWeight: '600',
   },
   modalInput: {
     borderWidth: 2,

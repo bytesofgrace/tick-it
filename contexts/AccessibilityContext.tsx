@@ -12,6 +12,9 @@ interface AccessibilityContextType {
   setFontSize: (size: FontSize) => Promise<void>;
   fontScale: number;
   isOnline: boolean;
+  isConnected: boolean; // actual network state
+  offlineMode: boolean; // user preference
+  toggleOfflineMode: () => Promise<void>;
 }
 
 const fontScales = {
@@ -32,24 +35,44 @@ export function useAccessibility() {
 
 export function AccessibilityProvider({ children }: { children: ReactNode }) {
   const [fontSize, setFontSizeState] = useState<FontSize>('medium');
-  const [isOnline, setIsOnline] = useState(true);
+  const [isConnected, setIsConnected] = useState(true); // actual network state
+  const [offlineMode, setOfflineMode] = useState(false); // user preference
   const [pendingSync, setPendingSync] = useState<FontSize | null>(null);
   const { currentUser } = useAuth();
+
+  // isOnline combines both network state and user preference
+  const isOnline = isConnected && !offlineMode;
+
+  // Load offline mode preference
+  useEffect(() => {
+    const loadOfflineMode = async () => {
+      try {
+        const mode = await AsyncStorage.getItem('@offline_mode');
+        if (mode) {
+          setOfflineMode(mode === 'true');
+        }
+      } catch (error) {
+        console.error('Failed to load offline mode preference:', error);
+      }
+    };
+    loadOfflineMode();
+  }, []);
 
   // Monitor network state
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const wasOffline = !isOnline;
-      setIsOnline(state.isConnected ?? true);
+      const newConnectionState = state.isConnected ?? true;
+      setIsConnected(newConnectionState);
       
       // If we just came back online and have pending changes, sync them
-      if (wasOffline && state.isConnected && pendingSync && currentUser) {
+      if (wasOffline && newConnectionState && !offlineMode && pendingSync && currentUser) {
         syncToFirestore(pendingSync, currentUser.uid);
       }
     });
 
     return () => unsubscribe();
-  }, [isOnline, pendingSync, currentUser]);
+  }, [isOnline, pendingSync, currentUser, offlineMode]);
 
   // Load settings from AsyncStorage first, then Firestore
   useEffect(() => {
@@ -130,11 +153,25 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const toggleOfflineMode = async () => {
+    try {
+      const newMode = !offlineMode;
+      await AsyncStorage.setItem('@offline_mode', newMode.toString());
+      setOfflineMode(newMode);
+      console.log(newMode ? '📴 Offline mode enabled' : '🟢 Online mode enabled');
+    } catch (error) {
+      console.error('Failed to toggle offline mode:', error);
+    }
+  };
+
   const value = {
     fontSize,
     setFontSize,
     fontScale: fontScales[fontSize],
     isOnline,
+    isConnected,
+    offlineMode,
+    toggleOfflineMode,
   };
 
   return (

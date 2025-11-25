@@ -15,6 +15,7 @@ import {
   ScrollView
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   collection, 
   addDoc, 
@@ -64,9 +65,47 @@ export default function ExpenseScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [people, setPeople] = useState<Person[]>([{ id: '1', name: '', amount: '', paid: false }]);
+  const [draftRestored, setDraftRestored] = useState(false);
   const { currentUser } = useAuth();
   const { showNotification } = useNotification();
   const { fontScale } = useAccessibility();
+
+  // Auto-save draft to AsyncStorage
+  useEffect(() => {
+    if (!modalVisible) return;
+
+    const saveDraft = async () => {
+      try {
+        const draft = {
+          title,
+          totalAmount,
+          description,
+          dueDate: dueDate?.toISOString(),
+          dueTime: dueTime?.toISOString(),
+          people,
+          editingExpenseId: editingExpense?.id || null,
+        };
+        await AsyncStorage.setItem('@expense_draft', JSON.stringify(draft));
+        console.log('💾 Expense draft auto-saved');
+      } catch (error) {
+        console.error('Failed to save expense draft:', error);
+      }
+    };
+
+    const timeoutId = setTimeout(saveDraft, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [title, totalAmount, description, dueDate, dueTime, people, modalVisible, editingExpense]);
+
+  // Clear draft after successful save
+  const clearDraft = async () => {
+    try {
+      await AsyncStorage.removeItem('@expense_draft');
+      setDraftRestored(false);
+      console.log('🗑️ Expense draft cleared');
+    } catch (error) {
+      console.error('Failed to clear expense draft:', error);
+    }
+  };
 
   // Dynamic styles based on font scale
   const dynamicStyles = {
@@ -223,14 +262,66 @@ export default function ExpenseScreen() {
     setPeople(people.map(person => ({ ...person, amount: amountPerPerson })));
   };
 
-  const openAddModal = () => {
+  const openAddModal = async () => {
+    // Check if there's a draft
+    try {
+      const draftJson = await AsyncStorage.getItem('@expense_draft');
+      if (draftJson) {
+        const draft = JSON.parse(draftJson);
+        if (!draft.editingExpenseId && (draft.title || draft.totalAmount || draft.description)) {
+          Alert.alert(
+            'Draft Found',
+            'You have an unsaved expense draft. Would you like to restore it?',
+            [
+              {
+                text: 'Discard',
+                style: 'destructive',
+                onPress: () => {
+                  clearDraft();
+                  setTitle('');
+                  setTotalAmount('');
+                  setDescription('');
+                  setDueDate(null);
+                  setDueTime(null);
+                  setPeople([{ id: '1', name: '', amount: '', paid: false }]);
+                  setShowDatePicker(false);
+                  setEditingExpense(null);
+                  setModalVisible(true);
+                }
+              },
+              {
+                text: 'Restore',
+                onPress: () => {
+                  setTitle(draft.title || '');
+                  setTotalAmount(draft.totalAmount || '');
+                  setDescription(draft.description || '');
+                  setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
+                  setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
+                  setPeople(draft.people || [{ id: '1', name: '', amount: '', paid: false }]);
+                  setShowDatePicker(false);
+                  setEditingExpense(null);
+                  setDraftRestored(true);
+                  setModalVisible(true);
+                }
+              }
+            ]
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check for expense draft:', error);
+    }
+
     setTitle('');
     setTotalAmount('');
     setDescription('');
     setDueDate(null);
+    setDueTime(null);
     setPeople([{ id: '1', name: '', amount: '', paid: false }]);
     setShowDatePicker(false);
     setEditingExpense(null);
+    setDraftRestored(false);
     setModalVisible(true);
   };
 
@@ -351,6 +442,7 @@ export default function ExpenseScreen() {
       setDueTime(null);
       setPeople([{ id: '1', name: '', amount: '', paid: false }]);
       setModalVisible(false);
+      await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
       Alert.alert('Error', 'Failed to add expense');
     }
@@ -392,6 +484,7 @@ export default function ExpenseScreen() {
       setPeople([{ id: '1', name: '', amount: '', paid: false }]);
       setEditingExpense(null);
       setModalVisible(false);
+      await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
       Alert.alert('Error', 'Failed to update expense');
     }
@@ -573,9 +666,16 @@ export default function ExpenseScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.modalContainer}>
-                  <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
-                    {editingExpense ? 'Edit Expense' : 'Add New Expense'}
-                  </Text>
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
+                      {editingExpense ? 'Edit Expense' : 'Add New Expense'}
+                    </Text>
+                    {draftRestored && !editingExpense && (
+                      <View style={styles.draftBadge}>
+                        <Text style={styles.draftBadgeText}>📝 Draft</Text>
+                      </View>
+                    )}
+                  </View>
 
                   <ScrollView 
                     style={styles.modalScrollView}
@@ -904,12 +1004,30 @@ const styles = StyleSheet.create({
   modalScrollView: {
     maxHeight: 500,
   },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 8,
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#6C55BE',
-    marginBottom: 20,
-    textAlign: 'center',
+  },
+  draftBadge: {
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FF9800',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  draftBadgeText: {
+    color: '#E65100',
+    fontSize: 11,
+    fontWeight: '600',
   },
   modalInput: {
     borderWidth: 2,

@@ -9,7 +9,7 @@ import { db } from '../firebaseConfig';
 export default function SettingsScreen({ navigation }: any) {
   const { currentUser, logout, userName, weeklyGoal, monthlyGoal } = useAuth();
   const { showNotification } = useNotification();
-  const { fontScale, isOnline } = useAccessibility();
+  const { fontScale, isOnline, isConnected, offlineMode, toggleOfflineMode } = useAccessibility();
 
   // Dynamic styles based on font scale
   const dynamicStyles = {
@@ -155,6 +155,7 @@ export default function SettingsScreen({ navigation }: any) {
             </Text>
           </View>
         )}
+
         {/* Profile Section */}
         <TouchableOpacity style={styles.profileSection} onPress={handleAccountSettings}>
           <View style={styles.profileBubble}>
@@ -172,6 +173,49 @@ export default function SettingsScreen({ navigation }: any) {
             <Text style={[styles.chevron, dynamicStyles.chevron]}>›</Text>
           </View>
         </TouchableOpacity>
+
+        {/* Connection Status Card */}
+        <View style={styles.connectionCard}>
+          <View style={styles.connectionHeader}>
+            <View style={styles.connectionStatusContainer}>
+              <View style={[
+                styles.connectionDot,
+                !isConnected ? styles.connectionDotRed : (offlineMode ? styles.connectionDotOrange : styles.connectionDotGreen)
+              ]} />
+              <Text style={styles.connectionStatusText}>
+                {!isConnected ? 'No Connection' : (offlineMode ? 'Offline Mode' : 'Online')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.offlineToggle,
+                !isConnected && styles.offlineToggleDisabled
+              ]}
+              onPress={toggleOfflineMode}
+              disabled={!isConnected}
+            >
+              <View style={[
+                styles.toggleTrack,
+                offlineMode && styles.toggleTrackActive,
+                !offlineMode && styles.toggleTrackInactive
+              ]}>
+                <View style={[
+                  styles.toggleThumb,
+                  offlineMode && styles.toggleThumbActive
+                ]} />
+              </View>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.connectionDescription}>
+            {!isConnected 
+              ? 'No internet connection detected'
+              : (offlineMode 
+                ? 'Working offline - changes will sync when you go back online'
+                : 'Connected - all changes sync automatically'
+              )
+            }
+          </Text>
+        </View>
 
         {/* Statistics Section */}
         <View style={styles.section}>
@@ -591,5 +635,82 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  connectionCard: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: '#CEE476',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  connectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  connectionStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  connectionDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  connectionDotGreen: {
+    backgroundColor: '#4CAF50',
+  },
+  connectionDotOrange: {
+    backgroundColor: '#FF9800',
+  },
+  connectionDotRed: {
+    backgroundColor: '#F44336',
+  },
+  connectionStatusText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6C55BE',
+  },
+  connectionDescription: {
+    fontSize: 13,
+    color: '#8B7BA8',
+    marginTop: 4,
+  },
+  offlineToggle: {
+    padding: 4,
+  },
+  offlineToggleDisabled: {
+    opacity: 0.5,
+  },
+  toggleTrack: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    padding: 2,
+  },
+  toggleTrackInactive: {
+    backgroundColor: '#4CAF50',
+  },
+  toggleTrackActive: {
+    backgroundColor: '#FF9800',
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleThumbActive: {
+    transform: [{ translateX: 22 }],
   },
 });
