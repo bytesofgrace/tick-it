@@ -176,6 +176,7 @@ export default function SettingsScreen({ navigation }: any) {
 
         {/* Connection Status Card */}
         <View style={styles.connectionCard}>
+          <Text style={styles.connectionCardTitle}>Sync Status</Text>
           <View style={styles.connectionHeader}>
             <View style={styles.connectionStatusContainer}>
               <View style={[
@@ -191,7 +192,20 @@ export default function SettingsScreen({ navigation }: any) {
                 styles.offlineToggle,
                 !isConnected && styles.offlineToggleDisabled
               ]}
-              onPress={toggleOfflineMode}
+              onPress={() => {
+                toggleOfflineMode();
+                // Show notification when going back online
+                if (offlineMode && isConnected) {
+                  setTimeout(() => {
+                    showNotification(
+                      'Back Online',
+                      'Your changes are now syncing',
+                      'success',
+                      2000
+                    );
+                  }, 300);
+                }
+              }}
               disabled={!isConnected}
             >
               <View style={[
@@ -643,6 +657,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
+  },
+  connectionCardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#6C55BE',
+    marginBottom: 12,
   },
   connectionHeader: {
     flexDirection: 'row',

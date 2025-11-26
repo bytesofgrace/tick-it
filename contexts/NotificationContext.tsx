@@ -8,7 +8,7 @@ interface Notification {
 }
 
 interface NotificationContextType {
-  showNotification: (title: string, message: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
+  showNotification: (title: string, message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number) => void;
   currentNotification: Notification | null;
   hideNotification: () => void;
 }
@@ -44,7 +44,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const showNotification = useCallback((
     title: string, 
     message: string, 
-    type: 'info' | 'success' | 'warning' | 'error' = 'info'
+    type: 'info' | 'success' | 'warning' | 'error' = 'info',
+    duration: number = 4000
   ) => {
     const notification: Notification = {
       id: Date.now().toString(),
@@ -59,10 +60,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     } else {
       setCurrentNotification(notification);
       
-      // Auto-dismiss after 4 seconds
+      // Auto-dismiss after specified duration
       setTimeout(() => {
         hideNotification();
-      }, 4000);
+      }, duration);
     }
   }, [currentNotification, hideNotification]);
 
