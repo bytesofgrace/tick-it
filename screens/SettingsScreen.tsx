@@ -5,6 +5,8 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
 import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SettingsScreen({ navigation }: any) {
   const { currentUser, logout, userName, weeklyGoal, monthlyGoal } = useAuth();
@@ -34,23 +36,54 @@ export default function SettingsScreen({ navigation }: any) {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
 
-  useEffect(() => {
+  // Load notification preferences from AsyncStorage first (faster and works offline)
+  const loadNotificationPreferences = async () => {
     if (!currentUser) return;
 
-    // Load notification preferences
-    const loadNotificationPreferences = async () => {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          setNotificationsEnabled(data.notificationsEnabled ?? false);
-          setDailyRemindersEnabled(data.dailyRemindersEnabled ?? false);
-          setFrequency(data.notificationFrequency ?? 'none');
-        }
-      } catch (error) {
-        console.error('Error loading notification preferences:', error);
+    try {
+      // Check if there are pending changes
+      const hasPending = await AsyncStorage.getItem('@notification_settings_pending');
+      
+      // Always load from AsyncStorage first (most up-to-date when offline)
+      const cachedSettings = await AsyncStorage.getItem('@notification_settings');
+      if (cachedSettings) {
+        const settings = JSON.parse(cachedSettings);
+        setFrequency(settings.frequency || 'none');
+        setNotificationsEnabled(settings.notificationsEnabled ?? false);
+        console.log('📱 [SettingsScreen] Loaded notification settings from cache');
       }
-    };
+
+      // Only load from Firestore if no pending changes (to avoid showing old data)
+      if (hasPending !== 'true') {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setNotificationsEnabled(data.notificationsEnabled ?? false);
+            setDailyRemindersEnabled(data.dailyRemindersEnabled ?? false);
+            setFrequency(data.notificationFrequency ?? 'none');
+            console.log('☁️ [SettingsScreen] Updated from Firestore');
+          }
+        } catch (firestoreError) {
+          console.log('📴 [SettingsScreen] Using cached notification settings (offline or error)');
+        }
+      } else {
+        console.log('⏳ [SettingsScreen] Using local changes - will sync when online');
+      }
+    } catch (error) {
+      console.error('Error loading notification preferences:', error);
+    }
+  };
+
+  // Reload notification settings when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadNotificationPreferences();
+    }, [currentUser])
+  );
+
+  useEffect(() => {
+    if (!currentUser) return;
 
     loadNotificationPreferences();
 

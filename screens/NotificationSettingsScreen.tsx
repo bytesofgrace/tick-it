@@ -9,7 +9,9 @@ import {
   Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
+import { useAccessibility } from '../contexts/AccessibilityContext';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { NotificationService } from '../services/NotificationService';
@@ -28,46 +30,140 @@ const DAYS_OF_WEEK = [
 
 export default function NotificationSettingsScreen({ navigation }: any) {
   const { currentUser } = useAuth();
+  const { isOnline } = useAccessibility();
   const [frequency, setFrequency] = useState<NotificationFrequency>('none');
   const [reminderTime, setReminderTime] = useState(new Date());
   const [selectedDays, setSelectedDays] = useState<number[]>([2, 3, 4, 5, 6]); // Mon-Fri default
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [oneTimeDate, setOneTimeDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pendingSync, setPendingSync] = useState(false);
 
   useEffect(() => {
     loadNotificationSettings();
   }, [currentUser]);
 
+  // Sync pending changes when coming back online
+  useEffect(() => {
+    const syncPendingChanges = async () => {
+      // Always check AsyncStorage for pending flag (don't rely on state)
+      const hasPending = await AsyncStorage.getItem('@notification_settings_pending');
+      console.log(`🔄 Sync check: isOnline=${isOnline}, hasPending=${hasPending}, hasUser=${!!currentUser}`);
+      
+      if (isOnline && hasPending === 'true' && currentUser) {
+        try {
+          console.log('🚀 Starting auto-sync of pending changes...');
+          const cachedSettings = await AsyncStorage.getItem('@notification_settings');
+          if (cachedSettings) {
+            const settings = JSON.parse(cachedSettings);
+            console.log('📤 Syncing settings to Firestore:', settings);
+            await setDoc(
+              doc(db, 'users', currentUser.uid),
+              {
+                notificationFrequency: settings.frequency,
+                notificationsEnabled: settings.notificationsEnabled,
+                reminderHour: settings.reminderHour,
+                reminderMinute: settings.reminderMinute,
+                selectedDays: settings.selectedDays,
+                oneTimeDate: settings.oneTimeDate,
+              },
+              { merge: true }
+            );
+            setPendingSync(false);
+            await AsyncStorage.removeItem('@notification_settings_pending');
+            console.log('✅ Pending notification settings synced to Firestore successfully!');
+          }
+        } catch (error) {
+          console.error('❌ Error syncing pending notification settings:', error);
+        }
+      }
+    };
+
+    syncPendingChanges();
+  }, [isOnline, pendingSync, currentUser]);
+
   const loadNotificationSettings = async () => {
     if (!currentUser) return;
 
     try {
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        
-        // Load frequency
-        if (data.notificationFrequency) {
-          setFrequency(data.notificationFrequency);
-        }
+      // Check if there are pending changes
+      const hasPending = await AsyncStorage.getItem('@notification_settings_pending');
+      if (hasPending === 'true') {
+        setPendingSync(true);
+      }
 
-        // Load time
-        if (data.reminderHour !== undefined && data.reminderMinute !== undefined) {
+      // Load from AsyncStorage first (works offline)
+      const cachedSettings = await AsyncStorage.getItem('@notification_settings');
+      if (cachedSettings) {
+        const settings = JSON.parse(cachedSettings);
+        setFrequency(settings.frequency || 'none');
+        if (settings.reminderHour !== undefined && settings.reminderMinute !== undefined) {
           const time = new Date();
-          time.setHours(data.reminderHour, data.reminderMinute, 0, 0);
+          time.setHours(settings.reminderHour, settings.reminderMinute, 0, 0);
           setReminderTime(time);
         }
-
-        // Load selected days for weekly
-        if (data.selectedDays) {
-          setSelectedDays(data.selectedDays);
+        if (settings.selectedDays) {
+          setSelectedDays(settings.selectedDays);
         }
-
-        // Load one-time date
-        if (data.oneTimeDate) {
-          setOneTimeDate(new Date(data.oneTimeDate));
+        if (settings.oneTimeDate) {
+          setOneTimeDate(new Date(settings.oneTimeDate));
         }
+        console.log('📱 Loaded notification settings from cache');
+      }
+
+      // Only load from Firestore if there's no pending sync (to avoid overwriting offline changes)
+      if (hasPending !== 'true') {
+        console.log('☁️ No pending changes, safe to load from Firestore');
+      } else {
+        console.log('⏳ SKIPPING Firestore load - pending changes detected, will sync when online');
+      }
+      
+      if (hasPending !== 'true') {
+        try {
+          console.log('☁️ No pending changes, loading from Firestore...');
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            
+            const firestoreSettings = {
+              frequency: data.notificationFrequency || 'none',
+              reminderHour: data.reminderHour,
+              reminderMinute: data.reminderMinute,
+              selectedDays: data.selectedDays || [2, 3, 4, 5, 6],
+              oneTimeDate: data.oneTimeDate,
+            };
+
+            // Load frequency
+            if (data.notificationFrequency) {
+              setFrequency(data.notificationFrequency);
+            }
+
+            // Load time
+            if (data.reminderHour !== undefined && data.reminderMinute !== undefined) {
+              const time = new Date();
+              time.setHours(data.reminderHour, data.reminderMinute, 0, 0);
+              setReminderTime(time);
+            }
+
+            // Load selected days for weekly
+            if (data.selectedDays) {
+              setSelectedDays(data.selectedDays);
+            }
+
+            // Load one-time date
+            if (data.oneTimeDate) {
+              setOneTimeDate(new Date(data.oneTimeDate));
+            }
+
+            // Update AsyncStorage cache
+            await AsyncStorage.setItem('@notification_settings', JSON.stringify(firestoreSettings));
+            console.log('✓ Notification settings synced from Firestore');
+          }
+        } catch (firestoreError) {
+          console.log('📴 Using cached notification settings (offline)');
+        }
+      } else {
+        console.log('⏳ Skipping Firestore load - pending changes will sync first');
       }
     } catch (error) {
       console.error('Error loading notification settings:', error);
@@ -149,21 +245,53 @@ export default function NotificationSettingsScreen({ navigation }: any) {
 
     const currentFreq = freq || frequency;
 
+    const settings = {
+      frequency: currentFreq,
+      notificationsEnabled: currentFreq !== 'none',
+      reminderHour: reminderTime.getHours(),
+      reminderMinute: reminderTime.getMinutes(),
+      selectedDays: selectedDays,
+      oneTimeDate: oneTimeDate.toISOString(),
+      timestamp: Date.now(), // Add timestamp to track which is newer
+    };
+
+    // Always save to AsyncStorage first (works offline)
     try {
-      await setDoc(
-        doc(db, 'users', currentUser.uid),
-        {
-          notificationFrequency: currentFreq,
-          notificationsEnabled: currentFreq !== 'none',
-          reminderHour: reminderTime.getHours(),
-          reminderMinute: reminderTime.getMinutes(),
-          selectedDays: selectedDays,
-          oneTimeDate: oneTimeDate.toISOString(),
-        },
-        { merge: true }
-      );
+      await AsyncStorage.setItem('@notification_settings', JSON.stringify(settings));
+      console.log('💾 Notification settings saved locally');
     } catch (error) {
-      console.error('Error saving notification settings:', error);
+      console.error('Error saving to AsyncStorage:', error);
+    }
+
+    // Try to sync to Firestore if online
+    if (isOnline) {
+      try {
+        await setDoc(
+          doc(db, 'users', currentUser.uid),
+          {
+            notificationFrequency: currentFreq,
+            notificationsEnabled: currentFreq !== 'none',
+            reminderHour: reminderTime.getHours(),
+            reminderMinute: reminderTime.getMinutes(),
+            selectedDays: selectedDays,
+            oneTimeDate: oneTimeDate.toISOString(),
+          },
+          { merge: true }
+        );
+        console.log('✓ Notification settings synced to Firestore');
+        setPendingSync(false);
+        await AsyncStorage.removeItem('@notification_settings_pending'); // Clear pending flag
+      } catch (error) {
+        console.error('Error syncing notification settings:', error);
+        setPendingSync(true);
+        await AsyncStorage.setItem('@notification_settings_pending', 'true'); // Mark as pending
+        console.log('⏳ Will sync notification settings when online');
+      }
+    } else {
+      setPendingSync(true);
+      await AsyncStorage.setItem('@notification_settings_pending', 'true'); // Mark as pending
+      console.log('📴 Offline - will sync notification settings when online');
+      console.log('📴 Settings marked as pending:', settings);
     }
   };
 
@@ -264,30 +392,6 @@ export default function NotificationSettingsScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Time Picker for Daily/Weekly */}
-        {(frequency === 'daily' || frequency === 'weekly') && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Reminder Time</Text>
-            <TouchableOpacity
-              style={styles.timeButton}
-              onPress={() => setShowTimePicker(true)}
-            >
-              <Text style={styles.timeLabel}>Time</Text>
-              <Text style={styles.timeValue}>{formatTime(reminderTime)}</Text>
-            </TouchableOpacity>
-
-            {showTimePicker && (
-              <DateTimePicker
-                value={reminderTime}
-                mode="time"
-                is24Hour={false}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleTimeChange}
-              />
-            )}
-          </View>
-        )}
-
         {/* Day Selection for Weekly */}
         {frequency === 'weekly' && (
           <View style={styles.section}>
@@ -311,6 +415,30 @@ export default function NotificationSettingsScreen({ navigation }: any) {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        )}
+
+        {/* Time Picker for Daily/Weekly */}
+        {(frequency === 'daily' || frequency === 'weekly') && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Reminder Time</Text>
+            <TouchableOpacity
+              style={styles.timeButton}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Text style={styles.timeLabel}>Time</Text>
+              <Text style={styles.timeValue}>{formatTime(reminderTime)}</Text>
+            </TouchableOpacity>
+
+            {showTimePicker && (
+              <DateTimePicker
+                value={reminderTime}
+                mode="time"
+                is24Hour={false}
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleTimeChange}
+              />
+            )}
           </View>
         )}
 
@@ -474,12 +602,11 @@ const styles = StyleSheet.create({
   },
   daysContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
   },
   dayButton: {
     flex: 1,
-    minWidth: '13%',
+    marginHorizontal: 2,
     backgroundColor: '#F9FAFB',
     borderWidth: 2,
     borderColor: '#E5E7EB',
@@ -498,6 +625,7 @@ const styles = StyleSheet.create({
   },
   dayButtonTextSelected: {
     color: '#FFFFFF',
+    fontWeight: '700',
   },
   applyButton: {
     backgroundColor: '#6C55BE',

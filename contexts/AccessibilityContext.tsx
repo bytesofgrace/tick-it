@@ -69,6 +69,11 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
       if (wasOffline && newConnectionState && !offlineMode && pendingSync && currentUser) {
         syncToFirestore(pendingSync, currentUser.uid);
       }
+
+      // Sync pending notification settings when coming back online
+      if (wasOffline && newConnectionState && !offlineMode && currentUser) {
+        syncNotificationSettings(currentUser.uid);
+      }
     });
 
     return () => unsubscribe();
@@ -122,6 +127,37 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Failed to sync font size:', error);
       // Keep it pending if sync fails
+    }
+  };
+
+  // Helper function to sync notification settings
+  const syncNotificationSettings = async (userId: string) => {
+    try {
+      const hasPending = await AsyncStorage.getItem('@notification_settings_pending');
+      if (hasPending === 'true') {
+        console.log('🚀 [Global] Syncing pending notification settings...');
+        const cachedSettings = await AsyncStorage.getItem('@notification_settings');
+        if (cachedSettings) {
+          const settings = JSON.parse(cachedSettings);
+          console.log('📤 [Global] Syncing to Firestore:', settings);
+          await setDoc(
+            doc(db, 'users', userId),
+            {
+              notificationFrequency: settings.frequency,
+              notificationsEnabled: settings.notificationsEnabled,
+              reminderHour: settings.reminderHour,
+              reminderMinute: settings.reminderMinute,
+              selectedDays: settings.selectedDays,
+              oneTimeDate: settings.oneTimeDate,
+            },
+            { merge: true }
+          );
+          await AsyncStorage.removeItem('@notification_settings_pending');
+          console.log('✅ [Global] Notification settings synced successfully!');
+        }
+      }
+    } catch (error) {
+      console.error('❌ [Global] Error syncing notification settings:', error);
     }
   };
 
