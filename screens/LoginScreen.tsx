@@ -128,11 +128,10 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {   // def
               secureTextEntry
               autoComplete="password"
             />
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
+              <Text style={styles.forgotPassword}>Forgot Password?</Text>
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity onPress={handleForgotPassword}>
-            <Text style={styles.forgotPassword}>Forgot Password?</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.loginButton, loading && styles.disabledButton]}
@@ -234,12 +233,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
   forgotPassword: {
     fontSize: 14,
     color: '#CEE476', // Green
-    textAlign: 'right',
-    marginTop: 8,
-    marginBottom: 4,
     textDecorationLine: 'underline',
   },
 });

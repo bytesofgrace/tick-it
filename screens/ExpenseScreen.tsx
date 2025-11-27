@@ -241,9 +241,7 @@ export default function ExpenseScreen() {
   };
 
   const removePerson = (id: string) => {
-    if (people.length > 1) {
-      setPeople(people.filter(person => person.id !== id));
-    }
+    setPeople(people.filter(person => person.id !== id));
   };
 
   const updatePerson = (id: string, field: 'name' | 'amount', value: string) => {
@@ -410,10 +408,6 @@ export default function ExpenseScreen() {
     }
 
     const validPeople = people.filter(person => person.name.trim());
-    if (validPeople.length === 0) {
-      Alert.alert('Error', 'Please add at least one person who owes money');
-      return;
-    }
 
     try {
       // Combine date and time if both are set
@@ -455,10 +449,6 @@ export default function ExpenseScreen() {
     }
 
     const validPeople = people.filter(person => person.name.trim());
-    if (validPeople.length === 0) {
-      Alert.alert('Error', 'Please add at least one person who owes money');
-      return;
-    }
 
     try {
       // Combine date and time if both are set
@@ -555,7 +545,7 @@ export default function ExpenseScreen() {
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={[styles.statNumber, dynamicStyles.statNumber]}>${Math.round(thisMonthExpenses)}</Text>
-              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>This Month</Text>
+              <Text style={[styles.statLabel, dynamicStyles.statLabel]}>Spent This Month</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={[styles.statNumber, dynamicStyles.statNumber]}>${Math.round(totalOwedAmount)}</Text>
