@@ -132,13 +132,45 @@ export default function SettingsScreen({ navigation }: any) {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: logout },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: logout,
+        },
       ]
     );
   };
 
   const handleAboutApp = () => {
-    Alert.alert('About Tick-It', 'Version 1.0.0\n\nYour productivity companion for tasks and expenses.');
+    Alert.alert(
+      'About Tick-It', 
+      'Version 1.0.0\n\n' +
+      '🎯 Your Complete Productivity Companion\n\n' +
+      'Tick-It is a comprehensive task and expense management app designed to help you stay organized and in control of your daily life.\n\n' +
+      '✅ TASK MANAGEMENT\n' +
+      '• Create, edit, and organize your todos\n' +
+      '• Add subtasks for complex projects\n' +
+      '• Set due dates and priorities\n' +
+      '• Auto-cleanup completed tasks\n\n' +
+      '💰 EXPENSE TRACKING\n' +
+      '• Track personal and shared expenses\n' +
+      '• Split bills with friends and family\n' +
+      '• Monitor monthly spending\n' +
+      '• Manage who owes you money\n\n' +
+      '🔔 SMART NOTIFICATIONS\n' +
+      '• Flexible reminder scheduling\n' +
+      '• Daily, weekly, or one-time reminders\n' +
+      '• Custom notification settings\n\n' +
+      '📱 OFFLINE SUPPORT\n' +
+      '• Works without internet connection\n' +
+      '• Auto-sync when back online\n' +
+      '• Draft saving for crash protection\n\n' +
+      '♿ ACCESSIBILITY\n' +
+      '• Adjustable font sizes\n' +
+      '• User-friendly interface\n' +
+      '• Dark/light theme support\n\n' +
+      'Built with love to make your life more organized and stress-free! 💚'
+    );
   };
 
   const handleHelpSupport = () => {
