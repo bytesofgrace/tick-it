@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
+import { doc, setDoc, getDoc, deleteDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../firebaseConfig';
 
@@ -14,6 +14,7 @@ interface AuthContextType {
   updateUserName: (name: string) => Promise<void>;
   changePassword: (newPassword: string, currentPassword: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  deleteAccount: (currentPassword: string) => Promise<void>;
   weeklyGoal: number;
   monthlyGoal: number;
   updateGoals: (weekly: number, monthly: number) => Promise<void>;
@@ -218,6 +219,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteAccount = async (currentPassword: string) => {
+    if (!currentUser || !currentUser.email) {
+      throw new Error('No current user found');
+    }
+
+    try {
+      // Re-authenticate the user first
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Delete all user data from Firestore
+      const batch = writeBatch(db);
+      const userId = currentUser.uid;
+
+      // Delete user document
+      batch.delete(doc(db, 'users', userId));
+
+      // Delete all todos for this user
+      const todosQuery = query(collection(db, 'todos'), where('userId', '==', userId));
+      const todosSnapshot = await getDocs(todosQuery);
+      todosSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      // Delete all expenses for this user
+      const expensesQuery = query(collection(db, 'expenses'), where('userId', '==', userId));
+      const expensesSnapshot = await getDocs(expensesQuery);
+      expensesSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      // Commit all deletions
+      await batch.commit();
+
+      // Clear saved credentials
+      await AsyncStorage.multiRemove(['@auth_email', '@auth_password']);
+
+      // Delete the Firebase Auth user
+      await deleteUser(currentUser);
+      
+      // Clear local state
+      setCurrentUser(null);
+      setUserName('');
+      setWeeklyGoal(80);
+      setMonthlyGoal(75);
+      
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      throw error;
+    }
+  };
+
   const value = {
     currentUser,
     login,
@@ -228,6 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateUserName,
     changePassword,
     resetPassword,
+    deleteAccount,
     weeklyGoal,
     monthlyGoal,
     updateGoals

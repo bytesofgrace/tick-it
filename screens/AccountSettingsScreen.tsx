@@ -5,7 +5,7 @@ import { useAccessibility } from '../contexts/AccessibilityContext';
 import { useNotification } from '../contexts/NotificationContext';
 
 export default function AccountSettingsScreen({ navigation }: any) {
-  const { currentUser, userName, updateUserName, changePassword, resetPassword, weeklyGoal, monthlyGoal, updateGoals } = useAuth();
+  const { currentUser, userName, updateUserName, changePassword, resetPassword, deleteAccount, weeklyGoal, monthlyGoal, updateGoals } = useAuth();
   const { fontScale } = useAccessibility();
   const { showNotification } = useNotification();
   const deleteTimeouts = useRef<{ [key: string]: NodeJS.Timeout }>({});
@@ -19,6 +19,8 @@ export default function AccountSettingsScreen({ navigation }: any) {
   const [tempWeeklyGoal, setTempWeeklyGoal] = useState(weeklyGoal);
   const [tempMonthlyGoal, setTempMonthlyGoal] = useState(monthlyGoal);
   const [deleteAccountConfirm, setDeleteAccountConfirm] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const handleOpenNameModal = () => {
     setTempName(userName);
@@ -140,8 +142,32 @@ export default function AccountSettingsScreen({ navigation }: any) {
   };
 
   const confirmDeleteAccount = async () => {
-    setDeleteAccountConfirm(false);
-    showNotification('Delete Account', 'Account deletion feature coming soon!', 'info');
+    if (!deleteAccountPassword.trim()) {
+      showNotification('Password Required', 'Please enter your current password to delete your account', 'error');
+      return;
+    }
+
+    setDeletingAccount(true);
+    
+    try {
+      await deleteAccount(deleteAccountPassword);
+      showNotification('Account Deleted', 'Your account has been permanently deleted', 'success');
+      setDeleteAccountConfirm(false);
+      setDeleteAccountPassword('');
+      // Navigation will be handled automatically by AuthContext state change
+    } catch (error: any) {
+      let errorMessage = 'Failed to delete account';
+      if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password. Please try again.';
+      } else if (error.code === 'auth/requires-recent-login') {
+        errorMessage = 'For security, please log out and log back in, then try deleting your account again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      showNotification('Delete Failed', errorMessage, 'error');
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   return (
@@ -383,18 +409,36 @@ export default function AccountSettingsScreen({ navigation }: any) {
             <Text style={styles.deleteMessage}>
               Are you sure you want to permanently delete your account? This action cannot be undone.
             </Text>
+            <Text style={styles.deleteSubMessage}>
+              Enter your current password to confirm:
+            </Text>
+            <TextInput
+              style={styles.deletePasswordInput}
+              value={deleteAccountPassword}
+              onChangeText={setDeleteAccountPassword}
+              placeholder="Current password"
+              placeholderTextColor="#999"
+              secureTextEntry
+              autoCapitalize="none"
+            />
             <View style={styles.deleteButtons}>
               <TouchableOpacity
                 style={styles.cancelDeleteButton}
-                onPress={() => setDeleteAccountConfirm(false)}
+                onPress={() => {
+                  setDeleteAccountConfirm(false);
+                  setDeleteAccountPassword('');
+                }}
               >
                 <Text style={styles.cancelDeleteText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.confirmDeleteButton}
+                style={[styles.confirmDeleteButton, deletingAccount && styles.disabledButton]}
                 onPress={confirmDeleteAccount}
+                disabled={deletingAccount}
               >
-                <Text style={styles.confirmDeleteText}>Delete Account</Text>
+                <Text style={styles.confirmDeleteText}>
+                  {deletingAccount ? 'Deleting...' : 'Delete Account'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -651,5 +695,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  deleteSubMessage: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  deletePasswordInput: {
+    backgroundColor: '#f8f8f8',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 20,
+    color: '#333',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
