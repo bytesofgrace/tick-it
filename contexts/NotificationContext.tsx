@@ -26,6 +26,16 @@ export function useNotification() {
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
   const [notificationQueue, setNotificationQueue] = useState<Notification[]>([]);
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const hideNotification = useCallback(() => {
     setCurrentNotification(null);
@@ -53,16 +63,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       message,
       type
     };
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
     // Immediately show notification, replacing current one if exists
     setCurrentNotification(notification);
     
-    // Clear any existing timeout and queue when setting a new notification
+    // Clear any existing queue when setting a new notification
     setNotificationQueue([]);
     
-    // Auto-dismiss after specified duration
-    setTimeout(() => {
+    // Auto-dismiss after specified duration - longer for error notifications
+    const dismissTimeout = type === 'error' ? 4000 : duration; // 4 seconds for errors, normal time for others
+    timeoutRef.current = setTimeout(() => {
       hideNotification();
-    }, duration);
+      timeoutRef.current = null;
+    }, dismissTimeout);
   }, [hideNotification]);
 
   const value = {

@@ -70,65 +70,164 @@ export default function NotificationBanner() {
     }
   };
 
-  return (
-    <Modal
-      visible={!!currentNotification}
-      transparent={true}
-      animationType="none"
-      statusBarTranslucent={true}
-    >
-      <View style={styles.modalOverlay}>
-        <Animated.View
-          style={[
-            styles.container,
-            {
-              backgroundColor: getBackgroundColor(),
-              transform: [{ translateY: slideAnim }],
-              opacity: opacityAnim,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.content}
-            onPress={hideNotification}
-            activeOpacity={0.9}
-          >
-            <View style={styles.iconContainer}>
-              <Text style={styles.icon}>{getIcon()}</Text>
+  if (!currentNotification) {
+    return null;
+  }
+
+  // For error notifications, show as popup modal for better UX
+  if (currentNotification && currentNotification.type === 'error') {
+    return (
+      <Modal
+        visible={true}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.popupCard}>
+            <View style={styles.popupHeader}>
+              <View style={styles.errorIconContainer}>
+                <Text style={styles.errorIcon}>⚠️</Text>
+              </View>
+              <Text style={styles.popupTitle}>{currentNotification.title}</Text>
             </View>
-            <View style={styles.textContainer}>
-              <Text style={styles.title}>{currentNotification?.title}</Text>
-              <Text style={styles.message}>{currentNotification?.message}</Text>
-            </View>
-            <TouchableOpacity onPress={hideNotification} style={styles.closeButton}>
-              <Text style={styles.closeText}>✕</Text>
+            <Text style={styles.popupMessage}>{currentNotification.message}</Text>
+            <TouchableOpacity
+              style={styles.confirmButton}
+              onPress={hideNotification}
+            >
+              <Text style={styles.confirmButtonText}>Confirm</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // For other notification types, show as banner
+  return (
+    <View style={styles.overlay}>
+      <Animated.View
+        style={[
+          styles.banner,
+          {
+            backgroundColor: getBackgroundColor(),
+            transform: [{ translateY: slideAnim }],
+            opacity: opacityAnim,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.content}
+          onPress={hideNotification}
+          activeOpacity={0.9}
+        >
+          <View style={styles.iconContainer}>
+            <Text style={styles.icon}>{getIcon()}</Text>
+          </View>
+          <View style={styles.textContainer}>
+            <Text style={styles.title}>{currentNotification?.title}</Text>
+            <Text style={styles.message}>{currentNotification?.message}</Text>
+          </View>
+          <TouchableOpacity onPress={hideNotification} style={styles.closeButton}>
+            <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </Modal>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-start',
-    alignItems: 'stretch',
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  container: {
+  popupCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 28,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 25,
+    minWidth: 300,
+    borderWidth: 2,
+    borderColor: '#9b59b6',
+  },
+  popupHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  errorIconContainer: {
+    backgroundColor: '#f8f4ff',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#9b59b6',
+  },
+  errorIcon: {
+    fontSize: 36,
+  },
+  popupTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#9b59b6',
+    textAlign: 'center',
+  },
+  popupMessage: {
+    fontSize: 17,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 28,
+    lineHeight: 25,
+  },
+  confirmButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999999999,
+    elevation: 999999999,
+  },
+  banner: {
     position: 'absolute',
     top: 50,
     left: 20,
     right: 20,
-    zIndex: 999999,
     borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 999999,
+    shadowOpacity: 0.8,
+    shadowRadius: 15,
+    elevation: 999999999,
+    zIndex: 999999999,
   },
   content: {
     flexDirection: 'row',

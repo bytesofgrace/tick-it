@@ -65,19 +65,21 @@ export default function ExpenseScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [people, setPeople] = useState<Person[]>([{ id: '1', name: '', amount: '', paid: false }]);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{id: string, title: string} | null>(null);
   const { currentUser } = useAuth();
-  const { showNotification } = useNotification();
+  const { showNotification, currentNotification, hideNotification } = useNotification();
   const { fontScale } = useAccessibility();
   const deleteTimeouts = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   // Auto-save draft to AsyncStorage
   useEffect(() => {
-    if (!modalVisible) return;
+    // Only auto-save when modal is visible and we have content
+    if (!modalVisible || editingExpense) return;
 
     const saveDraft = async () => {
       try {
-        // Only save if there's actual content and we're not editing an existing expense
-        if (!editingExpense && (title.trim() || totalAmount.trim() || description.trim())) {
+        // Only save if modal is still visible and there's actual content
+        if (modalVisible && !editingExpense && (title.trim() || totalAmount.trim() || description.trim())) {
           const draft = {
             title,
             totalAmount,
@@ -95,9 +97,17 @@ export default function ExpenseScreen() {
       }
     };
 
+    // Save draft after 1 second of changes, but only if modal is still visible
     const timeoutId = setTimeout(saveDraft, 1000);
     return () => clearTimeout(timeoutId);
   }, [title, totalAmount, description, dueDate, dueTime, people, modalVisible, editingExpense]);
+
+  // Handle keyboard dismissal when modal closes
+  useEffect(() => {
+    if (!modalVisible) {
+      Keyboard.dismiss();
+    }
+  }, [modalVisible]);
 
   // Clear draft after successful save
   const clearDraft = async () => {
@@ -137,7 +147,7 @@ export default function ExpenseScreen() {
     saveButtonText: { fontSize: 16 * fontScale },
     datePickerButtonText: { fontSize: 16 * fontScale },
     clearDateText: { fontSize: 14 * fontScale },
-    datePickerDoneText: { fontSize: 16 * fontScale },
+    dateTimePickerSaveText: { fontSize: 18 * fontScale },
   };
 
   const motivationalPhrases = [
@@ -476,26 +486,23 @@ export default function ExpenseScreen() {
     }
   };
 
-  const handleDeleteExpense = async (id: string) => {
-    showNotification('Confirm Delete', 'Tap delete again to confirm removing this expense', 'warning');
+  const handleDeleteExpense = (id: string) => {
+    const expenseToDelete = expenses.find(e => e.id === id);
+    if (expenseToDelete) {
+      setDeleteConfirm({ id, title: expenseToDelete.title });
+    }
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (!deleteConfirm) return;
     
-    const deleteKey = `delete_expense_${id}`;
-    const existingTimeout = deleteTimeouts.current[deleteKey];
-    
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      delete deleteTimeouts.current[deleteKey];
-      
-      try {
-        await deleteDoc(doc(db, 'expenses', id));
-        showNotification('Deleted', 'Expense removed successfully', 'success');
-      } catch (error: any) {
-        showNotification('Delete Failed', 'Failed to delete expense', 'error');
-      }
-    } else {
-      deleteTimeouts.current[deleteKey] = setTimeout(() => {
-        delete deleteTimeouts.current[deleteKey];
-      }, 3000);
+    try {
+      await deleteDoc(doc(db, 'expenses', deleteConfirm.id));
+      showNotification('Deleted', 'Expense removed successfully', 'success');
+      setDeleteConfirm(null);
+    } catch (error: any) {
+      showNotification('Delete Failed', 'Failed to delete expense', 'error');
+      setDeleteConfirm(null);
     }
   };
 
@@ -649,7 +656,7 @@ export default function ExpenseScreen() {
         </View>
 
         <Modal
-          animationType="slide"
+          animationType="fade"
           transparent={true}
           visible={modalVisible}
           onRequestClose={() => setModalVisible(false)}
@@ -658,6 +665,15 @@ export default function ExpenseScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.modalContainer}>
+                  {/* Error alert for validation */}
+                  {currentNotification && currentNotification.type === 'error' && (
+                    <View style={styles.errorAlert}>
+                      <Text style={styles.errorAlertText}>⚠️ {currentNotification.message}</Text>
+                      <TouchableOpacity onPress={hideNotification} style={styles.dismissButton}>
+                        <Text style={styles.dismissText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                   <View style={styles.modalHeader}>
                     <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
                       {editingExpense ? 'Edit Expense' : 'Add New Expense'}
@@ -765,14 +781,12 @@ export default function ExpenseScreen() {
                         textColor="#6C55BE"
                         themeVariant="light"
                       />
-                      {Platform.OS === 'ios' && (
-                        <TouchableOpacity
-                          style={styles.datePickerDoneButton}
-                          onPress={() => setShowDatePicker(false)}
-                        >
-                          <Text style={styles.datePickerDoneText}>Done</Text>
-                        </TouchableOpacity>
-                      )}
+                      <TouchableOpacity
+                        style={styles.dateTimePickerSaveButton}
+                        onPress={() => setShowDatePicker(false)}
+                      >
+                        <Text style={styles.dateTimePickerSaveText}>Save Date</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
 
@@ -814,14 +828,12 @@ export default function ExpenseScreen() {
                             textColor="#6C55BE"
                             themeVariant="light"
                           />
-                          {Platform.OS === 'ios' && (
-                            <TouchableOpacity
-                              style={styles.datePickerDoneButton}
-                              onPress={() => setShowTimePicker(false)}
-                            >
-                              <Text style={styles.datePickerDoneText}>Done</Text>
-                            </TouchableOpacity>
-                          )}
+                          <TouchableOpacity
+                            style={styles.dateTimePickerSaveButton}
+                            onPress={() => setShowTimePicker(false)}
+                          >
+                            <Text style={styles.dateTimePickerSaveText}>Save Time</Text>
+                          </TouchableOpacity>
                         </View>
                       )}
                     </>
@@ -842,10 +854,17 @@ export default function ExpenseScreen() {
                     <TouchableOpacity
                       style={[styles.modalButton, styles.cancelButton]}
                       onPress={() => {
-                        Keyboard.dismiss();
-                        setShowDatePicker(false);
-                        setShowTimePicker(false);
+                        // Clear any active notifications first
+                        if (currentNotification) {
+                          hideNotification();
+                        }
+                        // Close modal immediately, other cleanup will happen via useEffect
                         setModalVisible(false);
+                        // Clean up other states after modal starts closing
+                        setTimeout(() => {
+                          setShowDatePicker(false);
+                          setShowTimePicker(false);
+                        }, 0);
                       }}
                     >
                       <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -864,6 +883,32 @@ export default function ExpenseScreen() {
             </View>
           </TouchableWithoutFeedback>
         </Modal>
+        
+        {/* Delete confirmation popup - outside Modal so it can overlay everything */}
+        {deleteConfirm && (
+          <View style={styles.deleteOverlay}>
+            <View style={styles.deletePopup}>
+              <Text style={styles.deleteTitle}>Delete Expense</Text>
+              <Text style={styles.deleteMessage}>
+                Are you sure you want to delete "{deleteConfirm.title}"?
+              </Text>
+              <View style={styles.deleteButtons}>
+                <TouchableOpacity
+                  style={styles.cancelDeleteButton}
+                  onPress={() => setDeleteConfirm(null)}
+                >
+                  <Text style={styles.cancelDeleteText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmDeleteButton}
+                  onPress={confirmDeleteExpense}
+                >
+                  <Text style={styles.confirmDeleteText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -1131,16 +1176,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
   },
-  datePickerDoneButton: {
+  dateTimePickerSaveButton: {
     backgroundColor: '#CEE476',
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 12,
     alignItems: 'center',
+    marginTop: 15,
+    marginHorizontal: 20,
   },
-  datePickerDoneText: {
+  dateTimePickerSaveText: {
     color: '#6C55BE',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   descriptionInput: {
     height: 80,
@@ -1354,5 +1402,103 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     fontSize: 24,
+  },
+  deleteOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999999,
+    elevation: 999999,
+  },
+  deletePopup: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 30,
+    minWidth: 280,
+    borderWidth: 2,
+    borderColor: '#9b59b6',
+  },
+  deleteTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#9b59b6',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  deleteMessage: {
+    fontSize: 16,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  deleteButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cancelDeleteButton: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelDeleteText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    backgroundColor: '#FF6B6B',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmDeleteText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  errorAlert: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 99999,
+    elevation: 99999,
+    pointerEvents: 'auto',
+    alignSelf: 'flex-start',
+    maxHeight: 60,
+  },
+  errorAlertText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  dismissButton: {
+    marginLeft: 10,
+    padding: 4,
+  },
+  dismissText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

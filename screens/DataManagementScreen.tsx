@@ -20,8 +20,7 @@ export default function DataManagementScreen({ navigation }: any) {
   const [stats, setStats] = useState({ completedTasks: 0, oldExpenses: 0 });
   const [loading, setLoading] = useState(true);
   const [cleaning, setCleaning] = useState(false);
-  const [expenseDeletionStep, setExpenseDeletionStep] = useState<'select' | 'confirm' | null>(null);
-  const [selectedExpenseDays, setSelectedExpenseDays] = useState<number>(30);
+  const [showDeleteExpensesPopup, setShowDeleteExpensesPopup] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -149,67 +148,18 @@ export default function DataManagementScreen({ navigation }: any) {
   };
 
   const handleBulkDeleteOldExpenses = () => {
-    if (expenseDeletionStep === null) {
-      // Step 1: Show options
-      setExpenseDeletionStep('select');
-      showNotification(
-        'Choose Deletion Period',
-        'Tap the button again to cycle through: 30, 60, 90 days',
-        'info',
-        3000
-      );
-      setSelectedExpenseDays(30);
-    } else if (expenseDeletionStep === 'select') {
-      // Cycle through options
-      const options = [30, 60, 90];
-      const currentIndex = options.indexOf(selectedExpenseDays);
-      const nextIndex = (currentIndex + 1) % options.length;
-      const nextDays = options[nextIndex];
-      
-      setSelectedExpenseDays(nextDays);
-      showNotification(
-        `${nextDays} Days Selected`,
-        `Will delete expenses older than ${nextDays} days. Tap again to cycle or confirm below.`,
-        'info',
-        2500
-      );
-    }
+    setShowDeleteExpensesPopup(true);
   };
 
-  const confirmDeleteExpenses = async () => {
-    if (expenseDeletionStep !== 'select') return;
+  const handleDeleteExpensesByDays = async (days: number) => {
+    setShowDeleteExpensesPopup(false);
     
-    setExpenseDeletionStep('confirm');
-    showNotification(
-      'Confirm Deletion',
-      `Tap confirm again to permanently remove expenses older than ${selectedExpenseDays} days`,
-      'warning'
-    );
-    
-    const deleteKey = `delete_expenses_${selectedExpenseDays}`;
-    const existingTimeout = deleteTimeouts.current[deleteKey];
-    
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      delete deleteTimeouts.current[deleteKey];
-      
-      if (!currentUser) return;
-      setCleaning(true);
-      const count = await CleanupService.bulkDeleteOldExpenses(currentUser.uid, selectedExpenseDays);
-      setCleaning(false);
-      await loadStats();
-      showNotification('Success', `Deleted ${count} old expenses.`, 'success');
-      
-      // Reset state
-      setExpenseDeletionStep(null);
-      setSelectedExpenseDays(30);
-    } else {
-      deleteTimeouts.current[deleteKey] = setTimeout(() => {
-        delete deleteTimeouts.current[deleteKey];
-        setExpenseDeletionStep(null);
-        setSelectedExpenseDays(30);
-      }, 3000);
-    }
+    if (!currentUser) return;
+    setCleaning(true);
+    const count = await CleanupService.bulkDeleteOldExpenses(currentUser.uid, days);
+    setCleaning(false);
+    await loadStats();
+    showNotification('Success', `Deleted ${count} old expenses.`, 'success');
   };
 
   const handleRunCleanupNow = async () => {
@@ -363,48 +313,13 @@ export default function DataManagementScreen({ navigation }: any) {
             <View style={styles.bulkActionInfo}>
               <Text style={styles.bulkActionLabel}>Delete old expenses</Text>
               <Text style={styles.bulkActionSubtext}>
-                {expenseDeletionStep === 'select' 
-                  ? `Selected: ${selectedExpenseDays} days - tap again to cycle`
-                  : 'Choose retention period'
-                }
+                Choose retention period
               </Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Expense Deletion Confirmation */}
-        {expenseDeletionStep === 'select' && (
-          <View style={styles.confirmationSection}>
-            <View style={styles.confirmationCard}>
-              <Text style={styles.confirmationTitle}>
-                Delete expenses older than {selectedExpenseDays} days?
-              </Text>
-              <Text style={styles.confirmationSubtext}>
-                This action cannot be undone. All expense data older than {selectedExpenseDays} days will be permanently removed.
-              </Text>
-              <View style={styles.confirmationButtons}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setExpenseDeletionStep(null);
-                    setSelectedExpenseDays(30);
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.confirmButton}
-                  onPress={confirmDeleteExpenses}
-                  disabled={cleaning}
-                >
-                  <Text style={styles.confirmButtonText}>
-                    Delete Expenses
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        )}
+
 
         {/* Info */}
         <View style={styles.infoSection}>
@@ -413,6 +328,44 @@ export default function DataManagementScreen({ navigation }: any) {
           </Text>
         </View>
       </ScrollView>
+      
+      {/* Delete Expenses Popup */}
+      {showDeleteExpensesPopup && (
+        <View style={styles.deleteExpensesOverlay}>
+          <View style={styles.deleteExpensesPopup}>
+            <Text style={styles.deleteExpensesTitle}>Delete Old Expenses</Text>
+            <Text style={styles.deleteExpensesMessage}>
+              Choose how old expenses should be to delete:
+            </Text>
+            <View style={styles.deleteExpensesButtons}>
+              <TouchableOpacity
+                style={styles.dayOptionButton}
+                onPress={() => handleDeleteExpensesByDays(30)}
+              >
+                <Text style={styles.dayOptionText}>30 Days</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dayOptionButton}
+                onPress={() => handleDeleteExpensesByDays(60)}
+              >
+                <Text style={styles.dayOptionText}>60 Days</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dayOptionButton}
+                onPress={() => handleDeleteExpensesByDays(90)}
+              >
+                <Text style={styles.dayOptionText}>90 Days</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelOptionButton}
+                onPress={() => setShowDeleteExpensesPopup(false)}
+              >
+                <Text style={styles.cancelOptionText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -627,6 +580,73 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     fontSize: 16,
     color: '#fff',
+    fontWeight: '600',
+  },
+  deleteExpensesOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  deleteExpensesPopup: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    maxWidth: 320,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  deleteExpensesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  deleteExpensesMessage: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  deleteExpensesButtons: {
+    gap: 12,
+  },
+  dayOptionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#6C55BE',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  dayOptionText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  cancelOptionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  cancelOptionText: {
+    fontSize: 16,
+    color: '#666',
     fontWeight: '600',
   },
 });

@@ -18,6 +18,7 @@ export default function AccountSettingsScreen({ navigation }: any) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tempWeeklyGoal, setTempWeeklyGoal] = useState(weeklyGoal);
   const [tempMonthlyGoal, setTempMonthlyGoal] = useState(monthlyGoal);
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState(false);
 
   const handleOpenNameModal = () => {
     setTempName(userName);
@@ -135,20 +136,12 @@ export default function AccountSettingsScreen({ navigation }: any) {
   };
 
   const handleDeleteAccount = () => {
-    showNotification('Delete Account', 'Tap delete again to confirm account deletion', 'warning');
-    
-    const deleteKey = 'delete_account';
-    const existingTimeout = deleteTimeouts.current[deleteKey];
-    
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      delete deleteTimeouts.current[deleteKey];
-      showNotification('Delete Account', 'Account deletion feature coming soon!', 'info');
-    } else {
-      deleteTimeouts.current[deleteKey] = setTimeout(() => {
-        delete deleteTimeouts.current[deleteKey];
-      }, 3000);
-    }
+    setDeleteAccountConfirm(true);
+  };
+
+  const confirmDeleteAccount = async () => {
+    setDeleteAccountConfirm(false);
+    showNotification('Delete Account', 'Account deletion feature coming soon!', 'info');
   };
 
   return (
@@ -381,6 +374,32 @@ export default function AccountSettingsScreen({ navigation }: any) {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+      
+      {/* Delete account confirmation popup */}
+      {deleteAccountConfirm && (
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deletePopup}>
+            <Text style={styles.deleteTitle}>Delete Account</Text>
+            <Text style={styles.deleteMessage}>
+              Are you sure you want to permanently delete your account? This action cannot be undone.
+            </Text>
+            <View style={styles.deleteButtons}>
+              <TouchableOpacity
+                style={styles.cancelDeleteButton}
+                onPress={() => setDeleteAccountConfirm(false)}
+              >
+                <Text style={styles.cancelDeleteText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmDeleteButton}
+                onPress={confirmDeleteAccount}
+              >
+                <Text style={styles.confirmDeleteText}>Delete Account</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -566,5 +585,71 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  deleteOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999999,
+    elevation: 999999,
+  },
+  deletePopup: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 30,
+    minWidth: 280,
+    borderWidth: 2,
+    borderColor: '#9b59b6',
+  },
+  deleteTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#9b59b6',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  deleteMessage: {
+    fontSize: 16,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  deleteButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cancelDeleteButton: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelDeleteText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    backgroundColor: '#FF6B6B',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmDeleteText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

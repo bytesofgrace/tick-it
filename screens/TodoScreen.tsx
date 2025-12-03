@@ -195,7 +195,9 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
           {todo.dueDate && !todo.completed && (
             <Text style={[
               styles.dueDateText,
-              isOverdue() && styles.dueDateTextOverdue,
+              getUrgencyStyle() === styles.todoItemOverdue && styles.dueDateTextOverdue,
+              getUrgencyStyle() === styles.todoItemUrgent && styles.dueDateTextUrgent,
+              getUrgencyStyle() === styles.todoItemSoon && styles.dueDateTextSoon,
               { fontSize: 12 * fontScale }
             ]}>
               {formatDueDate()}
@@ -204,7 +206,10 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
           <TouchableOpacity onPress={() => onEdit(todo)} style={styles.editButton}>
             <Text style={[styles.editButtonText, { fontSize: 24 * fontScale }]}>✏️</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => onDelete(todo.id)} style={styles.deleteButton}>
+          <TouchableOpacity onPress={() => {
+            console.log('🗑️ Delete button pressed for todo:', todo.id, todo.title);
+            onDelete(todo.id);
+          }} style={styles.deleteButton}>
             <Text style={[styles.deleteButtonText, { fontSize: 24 * fontScale }]}>🗑️</Text>
           </TouchableOpacity>
         </View>
@@ -228,10 +233,12 @@ export default function TodoScreen() {
   const [newSubtaskText, setNewSubtaskText] = useState('');
   const [showConfetti, setShowConfetti] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{id: string, title: string} | null>(null);
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
   const confettiRef = useRef<any>(null);
   const deleteTimeouts = useRef<{[key: string]: NodeJS.Timeout}>({});
   const { currentUser, logout } = useAuth();
-  const { showNotification } = useNotification();
+  const { showNotification, currentNotification, hideNotification } = useNotification();
   const { fontScale } = useAccessibility();
 
   // Dynamic styles based on font scale
@@ -264,7 +271,7 @@ export default function TodoScreen() {
     modalSubtaskText: { fontSize: 14 * fontScale },
     removeSubtaskButton: { fontSize: 18 * fontScale },
     datePickerButtonText: { fontSize: 16 * fontScale },
-    datePickerDoneText: { fontSize: 16 * fontScale },
+    dateTimePickerSaveText: { fontSize: 18 * fontScale },
     clearDateText: { fontSize: 14 * fontScale },
   };
 
@@ -282,12 +289,13 @@ export default function TodoScreen() {
 
   // Auto-save draft to AsyncStorage
   useEffect(() => {
-    if (!modalVisible) return;
+    // Only auto-save when modal is visible and we have content
+    if (!modalVisible || editingTodo) return;
 
     const saveDraft = async () => {
       try {
-        // Only save if there's actual content and we're not editing an existing todo
-        if (!editingTodo && (title.trim() || description.trim() || subtasks.length > 0)) {
+        // Only save if modal is still visible and there's actual content
+        if (modalVisible && !editingTodo && (title.trim() || description.trim() || subtasks.length > 0)) {
           const draft = {
             title,
             description,
@@ -304,10 +312,17 @@ export default function TodoScreen() {
       }
     };
 
-    // Save draft after 1 second of changes
+    // Save draft after 1 second of changes, but only if modal is still visible
     const timeoutId = setTimeout(saveDraft, 1000);
     return () => clearTimeout(timeoutId);
   }, [title, description, dueDate, dueTime, subtasks, modalVisible, editingTodo]);
+
+  // Handle keyboard dismissal when modal closes
+  useEffect(() => {
+    if (!modalVisible) {
+      Keyboard.dismiss();
+    }
+  }, [modalVisible]);
 
   // Note: Draft loading is handled in openAddModal to show user confirmation dialog
 
@@ -415,10 +430,13 @@ export default function TodoScreen() {
   };
 
   const handleAddTodo = async () => {
+    console.log('🚀 handleAddTodo called - title:', `"${title}"`, 'trimmed:', `"${title.trim()}"`);
     if (!title.trim()) {
+      console.log('❌ Validation failed - calling showNotification');
       showNotification('Error', 'Please enter a task title', 'error');
       return;
     }
+    console.log('✅ Validation passed');
 
     try {
       // Combine date and time if both are set
@@ -529,29 +547,26 @@ export default function TodoScreen() {
     }
   };
 
-  const handleDeleteTodo = async (id: string) => {
-    showNotification('Confirm Delete', 'Tap delete again to confirm removing this task', 'warning');
+  const handleDeleteTodo = (id: string) => {
+    console.log('🗑️ handleDeleteTodo called with id:', id);
+    const todoToDelete = todos.find(t => t.id === id);
+    console.log('🗑️ Found todo to delete:', todoToDelete ? todoToDelete.title : 'NOT FOUND');
+    if (todoToDelete) {
+      console.log('🗑️ Setting delete confirmation popup');
+      setDeleteConfirm({ id, title: todoToDelete.title });
+    }
+  };
+
+  const confirmDeleteTodo = async () => {
+    if (!deleteConfirm) return;
     
-    // Set a temporary delete state for this todo
-    const deleteKey = `delete_${id}`;
-    const existingTimeout = deleteTimeouts.current[deleteKey];
-    
-    if (existingTimeout) {
-      // Second tap - actually delete
-      clearTimeout(existingTimeout);
-      delete deleteTimeouts.current[deleteKey];
-      
-      try {
-        await deleteDoc(doc(db, 'todos', id));
-        showNotification('Deleted', 'Task removed successfully', 'success');
-      } catch (error: any) {
-        showNotification('Delete Failed', 'Failed to delete todo', 'error');
-      }
-    } else {
-      // First tap - set timeout
-      deleteTimeouts.current[deleteKey] = setTimeout(() => {
-        delete deleteTimeouts.current[deleteKey];
-      }, 3000);
+    try {
+      await deleteDoc(doc(db, 'todos', deleteConfirm.id));
+      showNotification('Deleted', 'Task removed successfully', 'success');
+      setDeleteConfirm(null);
+    } catch (error: any) {
+      showNotification('Delete Failed', 'Failed to delete todo', 'error');
+      setDeleteConfirm(null);
     }
   };
 
@@ -651,19 +666,17 @@ export default function TodoScreen() {
   };
 
   const handleLogout = () => {
-    showNotification('Confirm Logout', 'Tap logout again to confirm signing out', 'warning');
-    
-    const logoutKey = 'logout_confirmation';
-    const existingTimeout = deleteTimeouts.current[logoutKey];
-    
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      delete deleteTimeouts.current[logoutKey];
-      logout();
-    } else {
-      deleteTimeouts.current[logoutKey] = setTimeout(() => {
-        delete deleteTimeouts.current[logoutKey];
-      }, 3000);
+    setLogoutConfirm(true);
+  };
+
+  const confirmLogout = async () => {
+    setLogoutConfirm(false);
+    try {
+      await logout();
+      showNotification('Goodbye!', 'You have been logged out successfully', 'success');
+    } catch (error) {
+      console.error('Logout error:', error);
+      showNotification('Logout Failed', 'There was an error logging you out. Please try again.', 'error');
     }
   };
 
@@ -751,7 +764,7 @@ export default function TodoScreen() {
         </View>
 
         <Modal
-          animationType="slide"
+          animationType="fade"
           transparent={true}
           visible={modalVisible}
           onRequestClose={() => setModalVisible(false)}
@@ -760,6 +773,17 @@ export default function TodoScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={() => {}}>
                 <View style={styles.modalContainer}>
+                  {/* Simple error message */}
+                  {currentNotification && currentNotification.type === 'error' && (
+                    <View style={styles.errorAlert}>
+                      <Text style={styles.errorAlertText}>⚠️ {currentNotification.message}</Text>
+                      <TouchableOpacity onPress={hideNotification} style={styles.dismissButton}>
+                        <Text style={styles.dismissText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+
                   <View style={styles.modalHeader}>
                     <Text style={[styles.modalTitle, dynamicStyles.modalTitle]}>
                       {editingTodo ? 'Edit Task' : 'Add New Task'}
@@ -829,14 +853,12 @@ export default function TodoScreen() {
                         textColor="#6C55BE"
                         themeVariant="light"
                       />
-                      {Platform.OS === 'ios' && (
-                        <TouchableOpacity
-                          style={styles.datePickerDoneButton}
-                          onPress={() => setShowDatePicker(false)}
-                        >
-                          <Text style={styles.datePickerDoneText}>Done</Text>
-                        </TouchableOpacity>
-                      )}
+                      <TouchableOpacity
+                        style={styles.dateTimePickerSaveButton}
+                        onPress={() => setShowDatePicker(false)}
+                      >
+                        <Text style={styles.dateTimePickerSaveText}>Save Date</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
 
@@ -878,14 +900,12 @@ export default function TodoScreen() {
                             textColor="#6C55BE"
                             themeVariant="light"
                           />
-                          {Platform.OS === 'ios' && (
-                            <TouchableOpacity
-                              style={styles.datePickerDoneButton}
-                              onPress={() => setShowTimePicker(false)}
-                            >
-                              <Text style={styles.datePickerDoneText}>Done</Text>
-                            </TouchableOpacity>
-                          )}
+                          <TouchableOpacity
+                            style={styles.dateTimePickerSaveButton}
+                            onPress={() => setShowTimePicker(false)}
+                          >
+                            <Text style={styles.dateTimePickerSaveText}>Save Time</Text>
+                          </TouchableOpacity>
                         </View>
                       )}
                     </>
@@ -929,17 +949,31 @@ export default function TodoScreen() {
                     <TouchableOpacity
                       style={[styles.modalButton, styles.cancelButton]}
                       onPress={() => {
-                        Keyboard.dismiss();
-                        setShowDatePicker(false);
-                        setShowTimePicker(false);
+                        // Clear any active notifications first
+                        if (currentNotification) {
+                          hideNotification();
+                        }
+                        // Close modal immediately, other cleanup will happen via useEffect
                         setModalVisible(false);
+                        // Clean up other states after modal starts closing
+                        setTimeout(() => {
+                          setShowDatePicker(false);
+                          setShowTimePicker(false);
+                        }, 0);
                       }}
                     >
                       <Text style={styles.cancelButtonText}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.modalButton, styles.saveButton]}
-                      onPress={editingTodo ? handleEditTodo : handleAddTodo}
+                      onPress={() => {
+                        console.log('🟦 Add/Save button pressed!', { editingTodo: !!editingTodo });
+                        if (editingTodo) {
+                          handleEditTodo();
+                        } else {
+                          handleAddTodo();
+                        }
+                      }}
                     >
                       <Text style={styles.saveButtonText}>
                         {editingTodo ? 'Save' : 'Add'}
@@ -951,6 +985,58 @@ export default function TodoScreen() {
             </View>
           </TouchableWithoutFeedback>
         </Modal>
+        
+        {/* Delete confirmation popup - outside Modal so it can overlay everything */}
+        {deleteConfirm && (
+          <View style={styles.deleteOverlay}>
+            <View style={styles.deletePopup}>
+              <Text style={styles.deleteTitle}>Delete Task</Text>
+              <Text style={styles.deleteMessage}>
+                Are you sure you want to delete "{deleteConfirm.title}"?
+              </Text>
+              <View style={styles.deleteButtons}>
+                <TouchableOpacity
+                  style={styles.cancelDeleteButton}
+                  onPress={() => setDeleteConfirm(null)}
+                >
+                  <Text style={styles.cancelDeleteText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmDeleteButton}
+                  onPress={confirmDeleteTodo}
+                >
+                  <Text style={styles.confirmDeleteText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+        
+        {/* Logout confirmation popup */}
+        {logoutConfirm && (
+          <View style={styles.deleteOverlay}>
+            <View style={styles.deletePopup}>
+              <Text style={styles.deleteTitle}>Sign Out</Text>
+              <Text style={styles.deleteMessage}>
+                Are you sure you want to sign out?
+              </Text>
+              <View style={styles.deleteButtons}>
+                <TouchableOpacity
+                  style={styles.cancelDeleteButton}
+                  onPress={() => setLogoutConfirm(false)}
+                >
+                  <Text style={styles.cancelDeleteText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmDeleteButton}
+                  onPress={confirmLogout}
+                >
+                  <Text style={styles.confirmDeleteText}>Sign Out</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -1362,6 +1448,12 @@ const styles = StyleSheet.create({
   dueDateTextOverdue: {
     color: '#FFFFFF',
   },
+  dueDateTextUrgent: {
+    color: '#EF4444',
+  },
+  dueDateTextSoon: {
+    color: '#F59E0B',
+  },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -1447,17 +1539,19 @@ const styles = StyleSheet.create({
     borderColor: '#CEE476',
     alignItems: 'center',
   },
-  datePickerDoneButton: {
+  dateTimePickerSaveButton: {
     backgroundColor: '#CEE476',
-    borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 15,
+    marginHorizontal: 20,
   },
-  datePickerDoneText: {
+  dateTimePickerSaveText: {
     color: '#6C55BE',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   clearDateButton: {
     backgroundColor: '#6C55BE',
@@ -1490,5 +1584,103 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
     pointerEvents: 'none',
+  },
+  errorAlert: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 99999,
+    elevation: 99999,
+    pointerEvents: 'auto',
+    alignSelf: 'flex-start',
+    maxHeight: 60,
+  },
+  errorAlertText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  dismissButton: {
+    marginLeft: 10,
+    padding: 4,
+  },
+  dismissText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deleteOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999999,
+    elevation: 999999,
+  },
+  deletePopup: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 30,
+    minWidth: 280,
+    borderWidth: 2,
+    borderColor: '#9b59b6',
+  },
+  deleteTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#9b59b6',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  deleteMessage: {
+    fontSize: 16,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  deleteButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cancelDeleteButton: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelDeleteText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    backgroundColor: '#FF6B6B',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmDeleteText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
