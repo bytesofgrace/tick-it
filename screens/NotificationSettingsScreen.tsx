@@ -174,6 +174,16 @@ export default function NotificationSettingsScreen({ navigation }: any) {
   const handleFrequencyChange = async (newFrequency: NotificationFrequency) => {
     setFrequency(newFrequency);
 
+    // Show immediate feedback for frequency selection
+    const frequencyMessages = {
+      'none': 'Notifications turned off',
+      'daily': 'Daily reminders selected - set your time below',
+      'weekly': 'Weekly reminders selected - choose days and time below', 
+      'once': 'One-time reminder selected - set date and time below'
+    };
+    
+    showNotification('Reminder Type', frequencyMessages[newFrequency], 'info', 1800);
+
     // If turning off notifications, cancel all
     if (newFrequency === 'none') {
       await NotificationService.cancelAllReminders();
@@ -187,7 +197,8 @@ export default function NotificationSettingsScreen({ navigation }: any) {
       showNotification(
         'Permission Denied',
         'Please enable notifications in your device settings.',
-        'error'
+        'error',
+        3000
       );
       setFrequency('none');
       return;
@@ -207,28 +218,28 @@ export default function NotificationSettingsScreen({ navigation }: any) {
         case 'daily':
           const dailyId = await NotificationService.scheduleDailyReminder(hour, minute);
           if (dailyId) {
-            showNotification('Daily Reminder Set', `You'll receive a reminder every day at ${formatTime(reminderTime)}`, 'success');
+            showNotification('Daily Reminder Set', `You'll receive a reminder every day at ${formatTime(reminderTime)}`, 'success', 2000);
           }
           break;
 
         case 'weekly':
           if (selectedDays.length === 0) {
-            showNotification('Select Days', 'Please select at least one day for weekly reminders.', 'error');
+            showNotification('Select Days', 'Please select at least one day for weekly reminders.', 'error', 2000);
             return;
           }
           const weeklyIds = await NotificationService.scheduleWeeklyReminders(hour, minute, selectedDays);
           if (weeklyIds.length > 0) {
             const days = selectedDays.map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label).join(', ');
-            showNotification('Weekly Reminders Set', `You'll receive reminders on ${days} at ${formatTime(reminderTime)}`, 'success');
+            showNotification('Weekly Reminders Set', `You'll receive reminders on ${days} at ${formatTime(reminderTime)}`, 'success', 2000);
           }
           break;
 
         case 'once':
           const onceId = await NotificationService.scheduleOneTimeReminder(oneTimeDate);
           if (onceId) {
-            showNotification('One-Time Reminder Set', `You'll receive a reminder on ${formatDateTime(oneTimeDate)}`, 'success');
+            showNotification('One-Time Reminder Set', `You'll receive a reminder on ${formatDateTime(oneTimeDate)}`, 'success', 2000);
           } else {
-            showNotification('Invalid Date', 'The selected date/time has already passed. Please choose a future date.', 'error');
+            showNotification('Invalid Date', 'The selected date/time has already passed. Please choose a future date.', 'error', 2500);
             return;
           }
           break;
@@ -237,7 +248,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
       await saveSettings(currentFreq);
     } catch (error) {
       console.error('Error applying notification schedule:', error);
-      showNotification('Error', 'Failed to schedule notifications', 'error');
+      showNotification('Error', 'Failed to schedule notifications', 'error', 2500);
     }
   };
 
@@ -302,10 +313,8 @@ export default function NotificationSettingsScreen({ navigation }: any) {
     if (selectedTime) {
       setReminderTime(selectedTime);
       
-      // Reapply schedule if frequency is already set
-      if (frequency === 'daily' || frequency === 'weekly') {
-        setTimeout(() => applyNotificationSchedule(), 500);
-      }
+      // Show immediate feedback
+      showNotification('Time Updated', `Reminder time set to ${formatTime(selectedTime)}`, 'success', 1800);
     }
   };
 
@@ -314,18 +323,26 @@ export default function NotificationSettingsScreen({ navigation }: any) {
     
     if (selectedDate) {
       setOneTimeDate(selectedDate);
+      
+      // Show immediate feedback
+      showNotification('Date & Time Updated', `Reminder set for ${formatDateTime(selectedDate)}`, 'success', 2000);
     }
   };
 
   const toggleDay = (day: number) => {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    
     setSelectedDays(prev => {
       const newDays = prev.includes(day)
         ? prev.filter(d => d !== day)
         : [...prev, day].sort();
       
-      // Reapply schedule if weekly is selected
-      if (frequency === 'weekly' && newDays.length > 0) {
-        setTimeout(() => applyNotificationSchedule(), 500);
+      // Show immediate feedback
+      const dayName = dayNames[day - 1];
+      if (prev.includes(day)) {
+        showNotification('Day Removed', `${dayName} removed from weekly reminders`, 'info', 1500);
+      } else {
+        showNotification('Day Added', `${dayName} added to weekly reminders`, 'success', 1500);
       }
       
       return newDays;
@@ -444,6 +461,15 @@ export default function NotificationSettingsScreen({ navigation }: any) {
                 />
               </View>
             )}
+
+            <TouchableOpacity
+              style={styles.applyButton}
+              onPress={() => applyNotificationSchedule()}
+            >
+              <Text style={styles.applyButtonText}>
+                {frequency === 'daily' ? 'Save Daily Reminder' : 'Save Weekly Reminders'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 

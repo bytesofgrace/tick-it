@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, Dimensions, Modal } from 'react-native';
 import { useNotification } from '../contexts/NotificationContext';
 
 const { width } = Dimensions.get('window');
@@ -42,11 +42,8 @@ export default function NotificationBanner() {
     }
   }, [currentNotification, slideAnim, opacityAnim]);
 
-  if (!currentNotification) {
-    return null;
-  }
-
   const getBackgroundColor = () => {
+    if (!currentNotification) return '#9b59b6';
     switch (currentNotification.type) {
       case 'success':
         return '#4CAF50';
@@ -60,6 +57,7 @@ export default function NotificationBanner() {
   };
 
   const getIcon = () => {
+    if (!currentNotification) return '🔔';
     switch (currentNotification.type) {
       case 'success':
         return '✓';
@@ -73,49 +71,64 @@ export default function NotificationBanner() {
   };
 
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          backgroundColor: getBackgroundColor(),
-          transform: [{ translateY: slideAnim }],
-          opacity: opacityAnim,
-        },
-      ]}
+    <Modal
+      visible={!!currentNotification}
+      transparent={true}
+      animationType="none"
+      statusBarTranslucent={true}
     >
-      <TouchableOpacity
-        style={styles.content}
-        onPress={hideNotification}
-        activeOpacity={0.9}
-      >
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>{getIcon()}</Text>
-        </View>
-        <View style={styles.textContainer}>
-          <Text style={styles.title}>{currentNotification.title}</Text>
-          <Text style={styles.message}>{currentNotification.message}</Text>
-        </View>
-        <TouchableOpacity onPress={hideNotification} style={styles.closeButton}>
-          <Text style={styles.closeText}>✕</Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Animated.View>
+      <View style={styles.modalOverlay}>
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              backgroundColor: getBackgroundColor(),
+              transform: [{ translateY: slideAnim }],
+              opacity: opacityAnim,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.content}
+            onPress={hideNotification}
+            activeOpacity={0.9}
+          >
+            <View style={styles.iconContainer}>
+              <Text style={styles.icon}>{getIcon()}</Text>
+            </View>
+            <View style={styles.textContainer}>
+              <Text style={styles.title}>{currentNotification?.title}</Text>
+              <Text style={styles.message}>{currentNotification?.message}</Text>
+            </View>
+            <TouchableOpacity onPress={hideNotification} style={styles.closeButton}>
+              <Text style={styles.closeText}>✕</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    backgroundColor: 'transparent',
+  },
   container: {
     position: 'absolute',
     top: 50,
     left: 20,
     right: 20,
-    zIndex: 9999,
+    zIndex: 999999,
     borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 999999,
   },
   content: {
     flexDirection: 'row',

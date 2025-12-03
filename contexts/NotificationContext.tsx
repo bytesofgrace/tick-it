@@ -30,11 +30,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const hideNotification = useCallback(() => {
     setCurrentNotification(null);
     
-    // Show next notification in queue if any
+    // Show next notification in queue immediately if any
     setNotificationQueue(prev => {
       if (prev.length > 0) {
         const [next, ...rest] = prev;
-        setTimeout(() => setCurrentNotification(next), 300);
+        setTimeout(() => setCurrentNotification(next), 100);
         return rest;
       }
       return prev;
@@ -45,7 +45,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     title: string, 
     message: string, 
     type: 'info' | 'success' | 'warning' | 'error' = 'info',
-    duration: number = 4000
+    duration: number = 2500
   ) => {
     const notification: Notification = {
       id: Date.now().toString(),
@@ -54,17 +54,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       type
     };
 
+    // Immediately show notification, replacing current one if exists
+    setCurrentNotification(notification);
+    
+    // Clear any existing timeout
     if (currentNotification) {
-      // Queue notification if one is already showing
-      setNotificationQueue(prev => [...prev, notification]);
-    } else {
-      setCurrentNotification(notification);
-      
-      // Auto-dismiss after specified duration
-      setTimeout(() => {
-        hideNotification();
-      }, duration);
+      // If there's already a notification, replace it immediately
+      setNotificationQueue(prev => []);
     }
+    
+    // Auto-dismiss after specified duration
+    setTimeout(() => {
+      hideNotification();
+    }, duration);
   }, [currentNotification, hideNotification]);
 
   const value = {
