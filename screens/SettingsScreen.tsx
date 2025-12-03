@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
@@ -12,6 +12,7 @@ export default function SettingsScreen({ navigation }: any) {
   const { currentUser, logout, userName, weeklyGoal, monthlyGoal } = useAuth();
   const { showNotification } = useNotification();
   const { fontScale, isOnline, isConnected, offlineMode, toggleOfflineMode } = useAccessibility();
+  const deleteTimeouts = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   // Dynamic styles based on font scale
   const dynamicStyles = {
@@ -27,6 +28,14 @@ export default function SettingsScreen({ navigation }: any) {
     settingSubtext: { fontSize: 13 * fontScale },
     logoutButtonText: { fontSize: 16 * fontScale },
     chevron: { fontSize: 18 * fontScale },
+    trendTitle: { fontSize: 18 * fontScale },
+    trendLabel: { fontSize: 16 * fontScale },
+    trendValue: { fontSize: 16 * fontScale },
+    trendVs: { fontSize: 14 * fontScale },
+    trendPercentage: { fontSize: 14 * fontScale },
+    trendPeriod: { fontSize: 12 * fontScale },
+    monthLabel: { fontSize: 12 * fontScale },
+    monthValue: { fontSize: 16 * fontScale },
   };
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -35,6 +44,75 @@ export default function SettingsScreen({ navigation }: any) {
   const [todos, setTodos] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // Calculate expense analytics
+  const getWeeklySpending = () => {
+    const now = new Date();
+    const currentWeekStart = new Date(now);
+    currentWeekStart.setDate(now.getDate() - now.getDay()); // Start of current week (Sunday)
+    currentWeekStart.setHours(0, 0, 0, 0);
+    
+    const lastWeekStart = new Date(currentWeekStart);
+    lastWeekStart.setDate(currentWeekStart.getDate() - 7);
+    
+    const thisWeekExpenses = expenses.filter(expense => {
+      const expenseDate = new Date(expense.createdAt);
+      return expenseDate >= currentWeekStart && expenseDate <= now;
+    }).reduce((sum, expense) => sum + expense.totalAmount, 0);
+    
+    const lastWeekExpenses = expenses.filter(expense => {
+      const expenseDate = new Date(expense.createdAt);
+      return expenseDate >= lastWeekStart && expenseDate < currentWeekStart;
+    }).reduce((sum, expense) => sum + expense.totalAmount, 0);
+    
+    return { thisWeek: thisWeekExpenses, lastWeek: lastWeekExpenses };
+  };
+
+  const getMonthlyPattern = () => {
+    const now = new Date();
+    const months = [];
+    
+    for (let i = 2; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      
+      const monthExpenses = expenses.filter(expense => {
+        const expenseDate = new Date(expense.createdAt);
+        return expenseDate >= monthDate && expenseDate < nextMonth;
+      }).reduce((sum, expense) => sum + expense.totalAmount, 0);
+      
+      months.push({
+        month: monthDate.toLocaleString('default', { month: 'short' }),
+        amount: monthExpenses
+      });
+    }
+    
+    return months;
+  };
+
+  const getSeasonalComparison = () => {
+    const now = new Date();
+    const thisMonthExpenses = expenses.filter(expense => {
+      const expenseDate = new Date(expense.createdAt);
+      return expenseDate.getMonth() === now.getMonth() && 
+             expenseDate.getFullYear() === now.getFullYear();
+    }).reduce((sum, expense) => sum + expense.totalAmount, 0);
+    
+    const lastYearStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    const lastYearEnd = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+    
+    const lastYearSameMonth = expenses.filter(expense => {
+      const expenseDate = new Date(expense.createdAt);
+      return expenseDate >= lastYearStart && expenseDate < lastYearEnd;
+    }).reduce((sum, expense) => sum + expense.totalAmount, 0);
+    
+    return { thisYear: thisMonthExpenses, lastYear: lastYearSameMonth };
+  };
+
+  const weeklyTrend = getWeeklySpending();
+  const monthlyPattern = getMonthlyPattern();
+  const seasonalComparison = getSeasonalComparison();
 
   // Load notification preferences from AsyncStorage first (faster and works offline)
   const loadNotificationPreferences = async () => {
@@ -116,65 +194,54 @@ export default function SettingsScreen({ navigation }: any) {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to permanently delete your account? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => Alert.alert('Delete Account', 'Account deletion feature coming soon!') },
-      ]
-    );
+    showNotification('Delete Account', 'Tap delete again to confirm account deletion', 'warning');
+    
+    const deleteKey = 'delete_account';
+    const existingTimeout = deleteTimeouts.current[deleteKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[deleteKey];
+      showNotification('Delete Account', 'Account deletion feature coming soon!', 'info');
+    } else {
+      deleteTimeouts.current[deleteKey] = setTimeout(() => {
+        delete deleteTimeouts.current[deleteKey];
+      }, 3000);
+    }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: logout,
-        },
-      ]
-    );
+    if (!showLogoutConfirm) {
+      setShowLogoutConfirm(true);
+      showNotification('Confirm Logout', 'Tap logout again to confirm', 'warning');
+      // Reset confirmation after 3 seconds
+      setTimeout(() => setShowLogoutConfirm(false), 3000);
+    } else {
+      performLogout();
+    }
+  };
+
+  const performLogout = async () => {
+    setShowLogoutConfirm(false);
+    try {
+      await logout();
+      showNotification('Goodbye!', 'You have been logged out successfully', 'success');
+    } catch (error) {
+      console.error('Logout error:', error);
+      showNotification('Logout Failed', 'There was an error logging you out. Please try again.', 'error');
+    }
   };
 
   const handleAboutApp = () => {
-    Alert.alert(
+    showNotification(
       'About Tick-It', 
-      'Version 1.0.0\n\n' +
-      '🎯 Your Complete Productivity Companion\n\n' +
-      'Tick-It is a comprehensive task and expense management app designed to help you stay organized and in control of your daily life.\n\n' +
-      '✅ TASK MANAGEMENT\n' +
-      '• Create, edit, and organize your todos\n' +
-      '• Add subtasks for complex projects\n' +
-      '• Set due dates and priorities\n' +
-      '• Auto-cleanup completed tasks\n\n' +
-      '💰 EXPENSE TRACKING\n' +
-      '• Track personal and shared expenses\n' +
-      '• Split bills with friends and family\n' +
-      '• Monitor monthly spending\n' +
-      '• Manage who owes you money\n\n' +
-      '🔔 SMART NOTIFICATIONS\n' +
-      '• Flexible reminder scheduling\n' +
-      '• Daily, weekly, or one-time reminders\n' +
-      '• Custom notification settings\n\n' +
-      '📱 OFFLINE SUPPORT\n' +
-      '• Works without internet connection\n' +
-      '• Auto-sync when back online\n' +
-      '• Draft saving for crash protection\n\n' +
-      '♿ ACCESSIBILITY\n' +
-      '• Adjustable font sizes\n' +
-      '• User-friendly interface\n' +
-      '• Dark/light theme support\n\n' +
-      'Built with love to make your life more organized and stress-free! 💚'
+      'Version 1.0.0 - Your Complete Productivity Companion with task management, expense tracking, smart notifications, offline support, and accessibility features!',
+      'info'
     );
   };
 
   const handleHelpSupport = () => {
-    Alert.alert('Help & Support', 'Need help? Contact us at support@tickit.com');
+    showNotification('Help & Support', 'Need help? Contact us at support@tickit.com', 'info');
   };
 
   // Calculate task completion rates
@@ -404,6 +471,67 @@ export default function SettingsScreen({ navigation }: any) {
               Goal: <Text style={{ color: '#6C55BE', fontWeight: 'bold' }}>{monthlyGoal}%</Text> | Current: <Text style={{ color: '#6C55BE', fontWeight: 'bold' }}>{monthlyCompletionRate}%</Text>
             </Text>
           </View>
+
+          {/* Expense Analytics */}
+          <View style={styles.expenseAnalyticsContainer}>
+            <Text style={[styles.trendTitle, dynamicStyles.trendTitle]}>💰 Spending Analytics</Text>
+            
+            {/* Weekly Trend */}
+            <View style={styles.trendItem}>
+              <Text style={[styles.trendLabel, dynamicStyles.trendLabel]}>This Week vs Last Week</Text>
+              <View style={styles.trendComparison}>
+                <Text style={[styles.trendValue, dynamicStyles.trendValue]}>${Math.round(weeklyTrend.thisWeek)}</Text>
+                <Text style={[styles.trendVs, dynamicStyles.trendVs]}>vs</Text>
+                <Text style={[styles.trendValue, dynamicStyles.trendValue]}>${Math.round(weeklyTrend.lastWeek)}</Text>
+                {weeklyTrend.thisWeek !== 0 && weeklyTrend.lastWeek !== 0 && (
+                  <Text style={[
+                    styles.trendPercentage, 
+                    dynamicStyles.trendPercentage,
+                    weeklyTrend.thisWeek > weeklyTrend.lastWeek ? styles.trendUp : styles.trendDown
+                  ]}>
+                    {weeklyTrend.lastWeek > 0 ? 
+                      `${Math.round(((weeklyTrend.thisWeek - weeklyTrend.lastWeek) / weeklyTrend.lastWeek) * 100)}%` : 
+                      'New spending'}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Monthly Pattern */}
+            <View style={styles.trendItem}>
+              <Text style={[styles.trendLabel, dynamicStyles.trendLabel]}>3-Month Pattern</Text>
+              <View style={styles.monthlyPattern}>
+                {monthlyPattern.map((month, index) => (
+                  <View key={index} style={styles.monthItem}>
+                    <Text style={[styles.monthLabel, dynamicStyles.monthLabel]}>{month.month}</Text>
+                    <Text style={[styles.monthValue, dynamicStyles.monthValue]}>${Math.round(month.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* Seasonal Comparison */}
+            {seasonalComparison.lastYear > 0 && (
+              <View style={styles.trendItem}>
+                <Text style={[styles.trendLabel, dynamicStyles.trendLabel]}>Year-over-Year</Text>
+                <View style={styles.trendComparison}>
+                  <Text style={[styles.trendValue, dynamicStyles.trendValue]}>${Math.round(seasonalComparison.thisYear)}</Text>
+                  <Text style={[styles.trendVs, dynamicStyles.trendVs]}>vs</Text>
+                  <Text style={[styles.trendValue, dynamicStyles.trendValue]}>${Math.round(seasonalComparison.lastYear)}</Text>
+                  <Text style={[styles.trendPeriod, dynamicStyles.trendPeriod]}>(same month last year)</Text>
+                  {seasonalComparison.thisYear !== 0 && seasonalComparison.lastYear !== 0 && (
+                    <Text style={[
+                      styles.trendPercentage, 
+                      dynamicStyles.trendPercentage,
+                      seasonalComparison.thisYear > seasonalComparison.lastYear ? styles.trendUp : styles.trendDown
+                    ]}>
+                      {Math.round(((seasonalComparison.thisYear - seasonalComparison.lastYear) / seasonalComparison.lastYear) * 100)}%
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Preferences Section */}
@@ -483,8 +611,13 @@ export default function SettingsScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
+        <TouchableOpacity 
+          style={[styles.logoutButton, showLogoutConfirm && styles.logoutButtonConfirm]} 
+          onPress={handleLogout}
+        >
+          <Text style={[styles.logoutButtonText, showLogoutConfirm && styles.logoutButtonTextConfirm]}>
+            {showLogoutConfirm ? 'Tap Again to Confirm' : 'Logout'}
+          </Text>
         </TouchableOpacity>
 
         <Text style={styles.versionText}>Tick-it v.1</Text>
@@ -683,6 +816,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  logoutButtonConfirm: {
+    backgroundColor: '#FF6B6B',
+  },
+  logoutButtonTextConfirm: {
+    color: '#FFFFFF',
+  },
   versionText: {
     textAlign: 'center',
     fontSize: 10,
@@ -797,5 +936,87 @@ const styles = StyleSheet.create({
   },
   toggleThumbActive: {
     transform: [{ translateX: 22 }],
+  },
+  // Expense analytics styles
+  expenseAnalyticsContainer: {
+    marginTop: 20,
+  },
+  trendTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#6C55BE',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  trendItem: {
+    backgroundColor: '#F3F4F6',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  trendLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6C55BE',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  trendComparison: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  trendValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#CEE476',
+    marginHorizontal: 5,
+  },
+  trendVs: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginHorizontal: 8,
+  },
+  trendPercentage: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  trendUp: {
+    color: '#ff6b6b',
+    backgroundColor: '#ffe6e6',
+  },
+  trendDown: {
+    color: '#28a745',
+    backgroundColor: '#e6f4ea',
+  },
+  trendPeriod: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginLeft: 5,
+  },
+  monthlyPattern: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  monthItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  monthLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 5,
+  },
+  monthValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#CEE476',
   },
 });

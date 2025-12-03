@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
   Platform,
 } from 'react-native';
@@ -12,6 +11,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { NotificationService } from '../services/NotificationService';
@@ -31,6 +31,7 @@ const DAYS_OF_WEEK = [
 export default function NotificationSettingsScreen({ navigation }: any) {
   const { currentUser } = useAuth();
   const { isOnline } = useAccessibility();
+  const { showNotification } = useNotification();
   const [frequency, setFrequency] = useState<NotificationFrequency>('none');
   const [reminderTime, setReminderTime] = useState(new Date());
   const [selectedDays, setSelectedDays] = useState<number[]>([2, 3, 4, 5, 6]); // Mon-Fri default
@@ -183,10 +184,10 @@ export default function NotificationSettingsScreen({ navigation }: any) {
     // Request permissions if not already granted
     const granted = await NotificationService.requestPermissions();
     if (!granted) {
-      Alert.alert(
+      showNotification(
         'Permission Denied',
         'Please enable notifications in your device settings.',
-        [{ text: 'OK' }]
+        'error'
       );
       setFrequency('none');
       return;
@@ -206,28 +207,28 @@ export default function NotificationSettingsScreen({ navigation }: any) {
         case 'daily':
           const dailyId = await NotificationService.scheduleDailyReminder(hour, minute);
           if (dailyId) {
-            Alert.alert('Daily Reminder Set', `You'll receive a reminder every day at ${formatTime(reminderTime)}`);
+            showNotification('Daily Reminder Set', `You'll receive a reminder every day at ${formatTime(reminderTime)}`, 'success');
           }
           break;
 
         case 'weekly':
           if (selectedDays.length === 0) {
-            Alert.alert('Select Days', 'Please select at least one day for weekly reminders.');
+            showNotification('Select Days', 'Please select at least one day for weekly reminders.', 'error');
             return;
           }
           const weeklyIds = await NotificationService.scheduleWeeklyReminders(hour, minute, selectedDays);
           if (weeklyIds.length > 0) {
             const days = selectedDays.map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label).join(', ');
-            Alert.alert('Weekly Reminders Set', `You'll receive reminders on ${days} at ${formatTime(reminderTime)}`);
+            showNotification('Weekly Reminders Set', `You'll receive reminders on ${days} at ${formatTime(reminderTime)}`, 'success');
           }
           break;
 
         case 'once':
           const onceId = await NotificationService.scheduleOneTimeReminder(oneTimeDate);
           if (onceId) {
-            Alert.alert('One-Time Reminder Set', `You'll receive a reminder on ${formatDateTime(oneTimeDate)}`);
+            showNotification('One-Time Reminder Set', `You'll receive a reminder on ${formatDateTime(oneTimeDate)}`, 'success');
           } else {
-            Alert.alert('Invalid Date', 'The selected date/time has already passed. Please choose a future date.');
+            showNotification('Invalid Date', 'The selected date/time has already passed. Please choose a future date.', 'error');
             return;
           }
           break;
@@ -236,7 +237,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
       await saveSettings(currentFreq);
     } catch (error) {
       console.error('Error applying notification schedule:', error);
-      Alert.alert('Error', 'Failed to schedule notifications');
+      showNotification('Error', 'Failed to schedule notifications', 'error');
     }
   };
 

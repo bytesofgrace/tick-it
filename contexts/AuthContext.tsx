@@ -132,9 +132,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
-    // Save credentials for persistence
-    await saveCredentials(email, password);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Save credentials for persistence
+      await saveCredentials(email, password);
+    } catch (error) {
+      console.error('AuthContext login error:', error);
+      throw error; // Re-throw the error so LoginScreen can handle it
+    }
   };
 
   const logout = async () => {

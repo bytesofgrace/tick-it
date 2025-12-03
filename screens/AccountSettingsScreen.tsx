@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, TextInput, Modal, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Modal, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
+import { useNotification } from '../contexts/NotificationContext';
 
 export default function AccountSettingsScreen({ navigation }: any) {
   const { currentUser, userName, updateUserName, changePassword, resetPassword, weeklyGoal, monthlyGoal, updateGoals } = useAuth();
   const { fontScale } = useAccessibility();
+  const { showNotification } = useNotification();
+  const deleteTimeouts = useRef<{ [key: string]: NodeJS.Timeout }>({});
   const [showNameModal, setShowNameModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showGoalsModal, setShowGoalsModal] = useState(false);
@@ -25,9 +28,9 @@ export default function AccountSettingsScreen({ navigation }: any) {
     try {
       await updateUserName(tempName);
       setShowNameModal(false);
-      Alert.alert('Success', 'Name updated successfully!');
+      showNotification('Success', 'Name updated successfully!', 'success');
     } catch (error) {
-      Alert.alert('Error', 'Failed to update name');
+      showNotification('Error', 'Failed to update name', 'error');
     }
   };
 
@@ -40,27 +43,28 @@ export default function AccountSettingsScreen({ navigation }: any) {
 
   const handleSavePassword = async () => {
     if (!currentPassword) {
-      Alert.alert('Error', 'Please enter your current password');
+      showNotification('Validation Error', 'Please enter your current password', 'error');
       return;
     }
 
     if (newPassword.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters long');
+      showNotification('Validation Error', 'Password must be at least 8 characters long', 'error');
       return;
     }
 
     // Password strength validation with regex
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
     if (!passwordRegex.test(newPassword)) {
-      Alert.alert(
+      showNotification(
         'Weak Password', 
-        'Password must contain:\n• At least one lowercase letter\n• At least one uppercase letter\n• At least one number'
+        'Password must contain: lowercase letter, uppercase letter, and number', 
+        'error'
       );
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      showNotification('Validation Error', 'Passwords do not match', 'error');
       return;
     }
 
@@ -70,7 +74,7 @@ export default function AccountSettingsScreen({ navigation }: any) {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Success', 'Password updated successfully!');
+      showNotification('Success', 'Password updated successfully!', 'success');
     } catch (error: any) {
       let errorMessage = 'Failed to update password';
       if (error.code === 'auth/requires-recent-login') {
@@ -78,37 +82,40 @@ export default function AccountSettingsScreen({ navigation }: any) {
       } else if (error.code === 'auth/wrong-password') {
         errorMessage = 'Current password is incorrect';
       }
-      Alert.alert('Error', errorMessage);
+      showNotification('Password Change Failed', errorMessage, 'error');
     }
   };
 
   const handleForgotPassword = async () => {
     if (!currentUser?.email) {
-      Alert.alert('Error', 'No email address found');
+      showNotification('Error', 'No email address found', 'error');
       return;
     }
 
-    Alert.alert(
-      'Reset Password',
-      `Send password reset email to ${currentUser.email}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: async () => {
-            try {
-              await resetPassword(currentUser.email!);
-              Alert.alert(
-                'Email Sent',
-                'Password reset email has been sent. Please check your email and follow the instructions.'
-              );
-            } catch (error: any) {
-              Alert.alert('Error', 'Failed to send password reset email');
-            }
-          }
-        }
-      ]
-    );
+    showNotification('Reset Password', 'Tap again to send password reset email', 'warning');
+    
+    const resetKey = 'password_reset';
+    const existingTimeout = deleteTimeouts.current[resetKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[resetKey];
+      
+      try {
+        await resetPassword(currentUser.email!);
+        showNotification(
+          'Email Sent',
+          'Password reset email sent. Check your email for instructions.',
+          'success'
+        );
+      } catch (error: any) {
+        showNotification('Error', 'Failed to send password reset email', 'error');
+      }
+    } else {
+      deleteTimeouts.current[resetKey] = setTimeout(() => {
+        delete deleteTimeouts.current[resetKey];
+      }, 3000);
+    }
   };
 
   const handleGoalsSettings = () => {
@@ -121,21 +128,27 @@ export default function AccountSettingsScreen({ navigation }: any) {
     try {
       await updateGoals(tempWeeklyGoal, tempMonthlyGoal);
       setShowGoalsModal(false);
-      Alert.alert('Success', 'Goals updated successfully!');
+      showNotification('Success', 'Goals updated successfully!', 'success');
     } catch (error) {
-      Alert.alert('Error', 'Failed to update goals');
+      showNotification('Error', 'Failed to update goals', 'error');
     }
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to permanently delete your account? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => Alert.alert('Delete Account', 'Account deletion feature coming soon!') },
-      ]
-    );
+    showNotification('Delete Account', 'Tap delete again to confirm account deletion', 'warning');
+    
+    const deleteKey = 'delete_account';
+    const existingTimeout = deleteTimeouts.current[deleteKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[deleteKey];
+      showNotification('Delete Account', 'Account deletion feature coming soon!', 'info');
+    } else {
+      deleteTimeouts.current[deleteKey] = setTimeout(() => {
+        delete deleteTimeouts.current[deleteKey];
+      }, 3000);
+    }
   };
 
   return (

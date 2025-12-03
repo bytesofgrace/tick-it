@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
-  Alert,
   Modal,
   SafeAreaView,
   TouchableWithoutFeedback,
@@ -45,6 +44,7 @@ interface TodoItemProps {
 function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoItemProps) {
   const [showSubtasks, setShowSubtasks] = useState(false);
   const { fontScale } = useAccessibility();
+  const { showNotification } = useNotification();
 
   const getUrgencyStyle = () => {
     if (!todo.dueDate || todo.completed) return null;
@@ -84,7 +84,7 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
         updatedAt: new Date(),
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to update subtask');
+      showNotification('Error', 'Failed to update subtask', 'error');
     }
   };
 
@@ -229,6 +229,7 @@ export default function TodoScreen() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const confettiRef = useRef<any>(null);
+  const deleteTimeouts = useRef<{[key: string]: NodeJS.Timeout}>({});
   const { currentUser, logout } = useAuth();
   const { showNotification } = useNotification();
   const { fontScale } = useAccessibility();
@@ -415,7 +416,7 @@ export default function TodoScreen() {
 
   const handleAddTodo = async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a task title');
+      showNotification('Error', 'Please enter a task title', 'error');
       return;
     }
 
@@ -447,13 +448,13 @@ export default function TodoScreen() {
       setModalVisible(false);
       await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to add task');
+      showNotification('Error', 'Failed to add task', 'error');
     }
   };
 
   const handleEditTodo = async () => {
     if (!title.trim() || !editingTodo) {
-      Alert.alert('Error', 'Please enter a task title');
+      showNotification('Error', 'Please enter a task title', 'error');
       return;
     }
 
@@ -482,7 +483,7 @@ export default function TodoScreen() {
       setModalVisible(false);
       await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update task');
+      showNotification('Update Failed', 'Failed to update task', 'error');
     }
   };
 
@@ -513,7 +514,7 @@ export default function TodoScreen() {
       
       await updateDoc(doc(db, 'todos', id), updateData);
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update task');
+      showNotification('Update Failed', 'Failed to update task', 'error');
     }
   };
 
@@ -524,29 +525,34 @@ export default function TodoScreen() {
         updatedAt: new Date(),
       });
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update priority');
+      showNotification('Update Failed', 'Failed to update priority', 'error');
     }
   };
 
   const handleDeleteTodo = async (id: string) => {
-    Alert.alert(
-      'Delete Task',
-      'Are you sure you want to delete this task?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'todos', id));
-            } catch (error: any) {
-              Alert.alert('Error', 'Failed to delete todo');
-            }
-          },
-        },
-      ]
-    );
+    showNotification('Confirm Delete', 'Tap delete again to confirm removing this task', 'warning');
+    
+    // Set a temporary delete state for this todo
+    const deleteKey = `delete_${id}`;
+    const existingTimeout = deleteTimeouts.current[deleteKey];
+    
+    if (existingTimeout) {
+      // Second tap - actually delete
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[deleteKey];
+      
+      try {
+        await deleteDoc(doc(db, 'todos', id));
+        showNotification('Deleted', 'Task removed successfully', 'success');
+      } catch (error: any) {
+        showNotification('Delete Failed', 'Failed to delete todo', 'error');
+      }
+    } else {
+      // First tap - set timeout
+      deleteTimeouts.current[deleteKey] = setTimeout(() => {
+        delete deleteTimeouts.current[deleteKey];
+      }, 3000);
+    }
   };
 
   const openAddModal = async () => {
@@ -569,43 +575,23 @@ export default function TodoScreen() {
         });
         
         if (!draft.editingTodoId && hasContent) {
-          Alert.alert(
-            'Draft Found',
-            'You have an unsaved draft. Would you like to restore it?',
-            [
-              {
-                text: 'Discard',
-                style: 'destructive',
-                onPress: () => {
-                  clearDraft();
-                  setTitle('');
-                  setDescription('');
-                  setDueDate(null);
-                  setDueTime(null);
-                  setSubtasks([]);
-                  setNewSubtaskText('');
-                  setShowDatePicker(false);
-                  setEditingTodo(null);
-                  setModalVisible(true);
-                }
-              },
-              {
-                text: 'Restore',
-                onPress: () => {
-                  setTitle(draft.title || '');
-                  setDescription(draft.description || '');
-                  setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
-                  setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
-                  setSubtasks(draft.subtasks || []);
-                  setNewSubtaskText('');
-                  setShowDatePicker(false);
-                  setEditingTodo(null);
-                  setDraftRestored(true);
-                  setModalVisible(true);
-                }
-              }
-            ]
+          showNotification(
+            'Draft Found', 
+            'Restoring your saved todo draft', 
+            'info'
           );
+          
+          // Auto-restore draft
+          setTitle(draft.title || '');
+          setDescription(draft.description || '');
+          setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
+          setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
+          setSubtasks(draft.subtasks || []);
+          setNewSubtaskText('');
+          setShowDatePicker(false);
+          setEditingTodo(null);
+          setDraftRestored(true);
+          setModalVisible(true);
           return;
         }
       }
@@ -665,14 +651,20 @@ export default function TodoScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: logout },
-      ]
-    );
+    showNotification('Confirm Logout', 'Tap logout again to confirm signing out', 'warning');
+    
+    const logoutKey = 'logout_confirmation';
+    const existingTimeout = deleteTimeouts.current[logoutKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[logoutKey];
+      logout();
+    } else {
+      deleteTimeouts.current[logoutKey] = setTimeout(() => {
+        delete deleteTimeouts.current[logoutKey];
+      }, 3000);
+    }
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {

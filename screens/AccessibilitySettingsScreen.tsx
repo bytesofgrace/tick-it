@@ -1,15 +1,17 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useAccessibility } from '../contexts/AccessibilityContext';
+import { useNotification } from '../contexts/NotificationContext';
 
 export default function AccessibilitySettingsScreen({ navigation }: any) {
   const { fontSize, setFontSize, isOnline } = useAccessibility();
+  const { showNotification } = useNotification();
 
   const handleFontSizeChange = async (size: 'small' | 'medium' | 'large') => {
     try {
       await setFontSize(size);
     } catch (error) {
-      Alert.alert('Error', 'Failed to update font size');
+      showNotification('Error', 'Failed to update font size', 'error');
     }
   };
 

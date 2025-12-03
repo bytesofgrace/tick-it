@@ -5,13 +5,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
+import { useNotification } from '../contexts/NotificationContext';
 
 interface RegisterScreenProps {
   navigation: any;
@@ -19,6 +19,7 @@ interface RegisterScreenProps {
 
 export default function RegisterScreen({ navigation }: RegisterScreenProps) {
   const { fontScale } = useAccessibility();
+  const { showNotification } = useNotification();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,39 +28,40 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
 
   async function handleRegister() {
     if (!email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showNotification('Missing Information', 'Please fill in all fields', 'error');
       return;
     }
 
     if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      showNotification('Invalid Email', 'Please enter a valid email address', 'error');
       return;
     }
 
     if (password.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters');
+      showNotification('Password Too Short', 'Password must be at least 8 characters', 'error');
       return;
     }
 
     // Password strength validation with regex
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
     if (!passwordRegex.test(password)) {
-      Alert.alert(
+      showNotification(
         'Weak Password', 
-        'Password must contain:\n• At least one lowercase letter\n• At least one uppercase letter\n• At least one number'
+        'Password must contain: lowercase, uppercase, and number', 
+        'error'
       );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      showNotification('Passwords Mismatch', 'Passwords do not match', 'error');
       return;
     }
 
     try {
       setLoading(true);
       await register(email, password);
-      Alert.alert('Success', 'Account created successfully. Time to tick-it!');
+      showNotification('Welcome!', 'Account created successfully. Time to tick-it!', 'success');
     } catch (error: any) {
       console.error(error);
       
@@ -76,7 +78,7 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
         errorMessage = error.message;
       }
       
-      Alert.alert('Registration Failed', errorMessage);
+      showNotification('Registration Failed', errorMessage, 'error');
     } finally {
       setLoading(false);
     }

@@ -5,13 +5,11 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { auth } from '../firebaseConfig';
 import { sendPasswordResetEmail } from 'firebase/auth';
 
@@ -25,78 +23,102 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {   // def
   const [loading, setLoading] = useState(false);    //    global email
   const { login } = useAuth();
   const { fontScale } = useAccessibility();
+  const { showNotification } = useNotification();
   
   async function handleForgotPassword() {
     if (!email) {
-      Alert.alert('Error', 'Please enter your email address first');
+      showNotification('Email Required', 'Please enter your email address first', 'error');
       return;
     }
     
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      showNotification('Invalid Email', 'Please enter a valid email address', 'error');
       return;
     }
 
     try {
       await sendPasswordResetEmail(auth, email);
-      Alert.alert('Success', 'Password reset email sent! Check your inbox and spam folder.');
+      showNotification('Email Sent', 'Password reset email sent! Check your inbox and spam folder.', 'success');
     } catch (error: any) {
       console.error(error);
       if (error.code === 'auth/user-not-found') {
-        Alert.alert('Error', 'No account found with this email address');
+        showNotification('Account Not Found', 'No account found with this email address', 'error');
       } else {
-        Alert.alert('Error', error.message || 'Failed to send password reset email');
+        showNotification('Reset Failed', error.message || 'Failed to send password reset email', 'error');
       }
     }
   }
 
   async function handleLogin() {
+    console.log('🔑 Login attempt started with email:', email);
+    
     if (!email && !password) {
-      Alert.alert('Error', 'Please enter email and password');
+      showNotification('Login Required', 'Please enter email and password', 'error');
       return;
     } 
     if (!email) {
-      Alert.alert('Error', 'Please enter your email');
+      showNotification('Email Required', 'Please enter your email', 'error');
       return;
     }
+    
+    // Validate email format FIRST
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      showNotification('Invalid Email', 'Please enter a valid email address', 'error');
       return;
     }
+    
     if (!password) {
-      Alert.alert('Error', 'Please enter your password');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      showNotification('Password Required', 'Please enter your password', 'error');
       return;
     }
 
-    const passwordPattern = /^(?=(?:.*\d){2,})(?=.*[A-Z]).+$/;
-    if (!passwordPattern.test(password)) {
-      Alert.alert('Error', 'Password must contain at least 2 numbers and 1 uppercase letter');
-      return;
-    }
-
+    console.log('🔑 Validation passed, attempting Firebase login...');
     try {
-      setLoading(true);              // loading = True
-      await login(email, password);  // await login(email, password)
-    } catch (error: any) {           // except Exception as error:
-      console.error(error);          // print(error)
-      Alert.alert('Login Failed', error.message || 'An error occurred during login');
-    } finally {                      // print(f"Login Failed: {str(error) or 'An error occurred during login'}")
-      setLoading(false);             // loading = False
+      setLoading(true);
+      await login(email, password);
+      console.log('🔑 Login successful!');
+      showNotification('Welcome!', 'Login successful!', 'success');
+    } catch (error: any) {
+      console.error('🔑 Login error:', error);
+      
+      let title = 'Login Failed';
+      let errorMessage = 'An error occurred during login';
+      
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        title = 'Wrong Password';
+        errorMessage = 'The password you entered is incorrect. Please try again.';
+      } else if (error.code === 'auth/user-not-found') {
+        title = 'Account Not Found';
+        errorMessage = 'No account found with this email address.';
+      } else if (error.code === 'auth/too-many-requests') {
+        title = 'Too Many Attempts';
+        errorMessage = 'Too many failed login attempts. Please try again later.';
+      } else if (error.code === 'auth/invalid-email') {
+        title = 'Invalid Email';
+        errorMessage = 'Please enter a valid email address.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      console.log('🔑 Showing notification:', errorMessage);
+      showNotification(title, errorMessage, 'error');
+    } finally {
+      console.log('🔑 Login attempt finished, setting loading to false');
+      setLoading(false);
     }
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+    <View style={styles.container}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Welcome to Tick-it!</Text>
           <Text style={styles.subtitle}>Log in to start ticking</Text>
@@ -114,6 +136,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {   // def
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
+              returnKeyType="next"
             />
           </View>
 
@@ -127,6 +150,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {   // def
               onChangeText={setPassword}
               secureTextEntry
               autoComplete="password"
+              returnKeyType="done"
             />
             <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
               <Text style={styles.forgotPassword}>Forgot Password?</Text>
@@ -151,7 +175,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {   // def
           </View>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

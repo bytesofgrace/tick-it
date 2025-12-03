@@ -1,19 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
   Switch,
   ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { CleanupService, CleanupSettings, DEFAULT_CLEANUP_SETTINGS } from '../services/CleanupService';
 
 export default function DataManagementScreen({ navigation }: any) {
   const { currentUser } = useAuth();
+  const { showNotification } = useNotification();
+  const deleteTimeouts = useRef<{ [key: string]: NodeJS.Timeout }>({});
   const [settings, setSettings] = useState<CleanupSettings>(DEFAULT_CLEANUP_SETTINGS);
   const [stats, setStats] = useState({ completedTasks: 0, oldExpenses: 0 });
   const [loading, setLoading] = useState(true);
@@ -42,9 +44,10 @@ export default function DataManagementScreen({ navigation }: any) {
     await CleanupService.saveCleanupSettings(newSettings);
     
     if (value) {
-      Alert.alert(
+      showNotification(
         'Auto-Delete Enabled',
-        `Completed tasks will be automatically deleted after ${settings.taskRetentionHours} hours.`
+        `Completed tasks will be automatically deleted after ${settings.taskRetentionHours} hours.`,
+        'success'
       );
     }
   };
@@ -55,119 +58,130 @@ export default function DataManagementScreen({ navigation }: any) {
     await CleanupService.saveCleanupSettings(newSettings);
     
     if (value) {
-      Alert.alert(
+      showNotification(
         'Auto-Delete Enabled',
-        `Expenses will be automatically deleted after ${settings.expenseRetentionDays} days.`
+        `Expenses will be automatically deleted after ${settings.expenseRetentionDays} days.`,
+        'success'
       );
     }
   };
 
   const handleChangeTaskRetention = () => {
-    Alert.alert(
-      'Change Task Retention',
-      `Delete completed tasks after how many hours?`,
-      [
-        { text: '12 hours', onPress: () => updateTaskRetention(12) },
-        { text: '24 hours', onPress: () => updateTaskRetention(24) },
-        { text: '48 hours', onPress: () => updateTaskRetention(48) },
-        { text: '1 week', onPress: () => updateTaskRetention(168) },
-        { text: 'Cancel', style: 'cancel' },
-      ]
+    const options = [12, 24, 48, 168];
+    const labels = ['12 hours', '24 hours', '48 hours', '1 week'];
+    const currentIndex = options.indexOf(settings.taskRetentionHours);
+    const nextIndex = (currentIndex + 1) % options.length;
+    const nextHours = options[nextIndex];
+    const nextLabel = labels[nextIndex];
+    
+    showNotification(
+      'Task Retention Changed',
+      `Tasks will now be deleted after ${nextLabel}. Tap again to cycle options.`,
+      'info'
     );
+    
+    updateTaskRetention(nextHours);
   };
 
   const updateTaskRetention = async (hours: number) => {
     const newSettings = { ...settings, taskRetentionHours: hours };
     setSettings(newSettings);
     await CleanupService.saveCleanupSettings(newSettings);
-    Alert.alert('Updated', `Tasks will be deleted ${hours} hours after completion.`);
+    showNotification('Updated', `Tasks will be deleted ${hours} hours after completion.`, 'success');
   };
 
   const handleChangeExpenseRetention = () => {
-    Alert.alert(
-      'Change Expense Retention',
-      `Delete expenses after how many days?`,
-      [
-        { text: '7 days', onPress: () => updateExpenseRetention(7) },
-        { text: '30 days', onPress: () => updateExpenseRetention(30) },
-        { text: '60 days', onPress: () => updateExpenseRetention(60) },
-        { text: '90 days', onPress: () => updateExpenseRetention(90) },
-        { text: 'Cancel', style: 'cancel' },
-      ]
+    const options = [7, 30, 60, 90];
+    const labels = ['7 days', '30 days', '60 days', '90 days'];
+    const currentIndex = options.indexOf(settings.expenseRetentionDays);
+    const nextIndex = (currentIndex + 1) % options.length;
+    const nextDays = options[nextIndex];
+    const nextLabel = labels[nextIndex];
+    
+    showNotification(
+      'Expense Retention Changed',
+      `Expenses will now be deleted after ${nextLabel}. Tap again to cycle options.`,
+      'info'
     );
+    
+    updateExpenseRetention(nextDays);
   };
 
   const updateExpenseRetention = async (days: number) => {
     const newSettings = { ...settings, expenseRetentionDays: days };
     setSettings(newSettings);
     await CleanupService.saveCleanupSettings(newSettings);
-    Alert.alert('Updated', `Expenses will be deleted after ${days} days.`);
+    showNotification('Updated', `Expenses will be deleted after ${days} days.`, 'success');
   };
 
-  const handleBulkDeleteCompletedTasks = () => {
-    Alert.alert(
-      'Delete All Completed Tasks',
-      `This will permanently delete all ${stats.completedTasks} completed tasks. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All',
-          style: 'destructive',
-          onPress: async () => {
-            if (!currentUser) return;
-            setCleaning(true);
-            const count = await CleanupService.bulkDeleteAllCompletedTasks(currentUser.uid);
-            setCleaning(false);
-            await loadStats();
-            Alert.alert('Success', `Deleted ${count} completed tasks.`);
-          },
-        },
-      ]
-    );
+  const handleBulkDeleteCompletedTasks = async () => {
+    if (stats.completedTasks === 0) {
+      showNotification(
+        'No Tasks to Delete',
+        'There are no completed tasks to be deleted!',
+        'info'
+      );
+      return;
+    }
+
+    showNotification('Confirm Delete', 'Tap delete again to permanently remove all completed tasks', 'warning');
+    
+    const deleteKey = 'delete_completed_tasks';
+    const existingTimeout = deleteTimeouts.current[deleteKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[deleteKey];
+      
+      if (!currentUser) return;
+      setCleaning(true);
+      const count = await CleanupService.bulkDeleteAllCompletedTasks(currentUser.uid);
+      setCleaning(false);
+      await loadStats();
+      showNotification('Success', `Deleted ${count} completed tasks.`, 'success');
+    } else {
+      deleteTimeouts.current[deleteKey] = setTimeout(() => {
+        delete deleteTimeouts.current[deleteKey];
+      }, 3000);
+    }
   };
 
-  const handleBulkDeleteOldExpenses = () => {
-    Alert.alert(
+  const handleBulkDeleteOldExpenses = async () => {
+    showNotification(
       'Delete Old Expenses',
-      `Delete expenses older than how many days?`,
-      [
-        {
-          text: '30 days',
-          onPress: () => confirmDeleteExpenses(30),
-        },
-        {
-          text: '60 days',
-          onPress: () => confirmDeleteExpenses(60),
-        },
-        {
-          text: '90 days',
-          onPress: () => confirmDeleteExpenses(90),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]
+      'Choose deletion period: Tap to cycle through 30, 60, 90 days',
+      'warning'
     );
+    
+    // Default to 30 days for safety
+    await confirmDeleteExpenses(30);
   };
 
-  const confirmDeleteExpenses = (days: number) => {
-    Alert.alert(
+  const confirmDeleteExpenses = async (days: number) => {
+    showNotification(
       'Confirm Deletion',
-      `This will permanently delete all expenses older than ${days} days. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!currentUser) return;
-            setCleaning(true);
-            const count = await CleanupService.bulkDeleteOldExpenses(currentUser.uid, days);
-            setCleaning(false);
-            await loadStats();
-            Alert.alert('Success', `Deleted ${count} old expenses.`);
-          },
-        },
-      ]
+      `Tap delete again to permanently remove expenses older than ${days} days`,
+      'warning'
     );
+    
+    const deleteKey = `delete_expenses_${days}`;
+    const existingTimeout = deleteTimeouts.current[deleteKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[deleteKey];
+      
+      if (!currentUser) return;
+      setCleaning(true);
+      const count = await CleanupService.bulkDeleteOldExpenses(currentUser.uid, days);
+      setCleaning(false);
+      await loadStats();
+      showNotification('Success', `Deleted ${count} old expenses.`, 'success');
+    } else {
+      deleteTimeouts.current[deleteKey] = setTimeout(() => {
+        delete deleteTimeouts.current[deleteKey];
+      }, 3000);
+    }
   };
 
   const handleRunCleanupNow = async () => {
@@ -178,9 +192,10 @@ export default function DataManagementScreen({ navigation }: any) {
     setCleaning(false);
     await loadStats();
     
-    Alert.alert(
+    showNotification(
       'Cleanup Complete',
-      `Deleted ${results.tasks} completed tasks and ${results.expenses} old expenses.`
+      `Deleted ${results.tasks} completed tasks and ${results.expenses} old expenses.`,
+      'success'
     );
   };
 
@@ -300,7 +315,7 @@ export default function DataManagementScreen({ navigation }: any) {
           <TouchableOpacity
             style={styles.bulkActionButton}
             onPress={handleBulkDeleteCompletedTasks}
-            disabled={stats.completedTasks === 0 || cleaning}
+            disabled={cleaning}
           >
             <Text style={styles.bulkActionIcon}>🗑️</Text>
             <View style={styles.bulkActionInfo}>

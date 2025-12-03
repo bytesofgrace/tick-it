@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert,
   Platform,
   ScrollView
 } from 'react-native';
@@ -69,6 +68,7 @@ export default function ExpenseScreen() {
   const { currentUser } = useAuth();
   const { showNotification } = useNotification();
   const { fontScale } = useAccessibility();
+  const deleteTimeouts = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   // Auto-save draft to AsyncStorage
   useEffect(() => {
@@ -283,43 +283,23 @@ export default function ExpenseScreen() {
         });
         
         if (!draft.editingExpenseId && hasContent) {
-          Alert.alert(
-            'Draft Found',
-            'You have an unsaved expense draft. Would you like to restore it?',
-            [
-              {
-                text: 'Discard',
-                style: 'destructive',
-                onPress: () => {
-                  clearDraft();
-                  setTitle('');
-                  setTotalAmount('');
-                  setDescription('');
-                  setDueDate(null);
-                  setDueTime(null);
-                  setPeople([{ id: '1', name: '', amount: '', paid: false }]);
-                  setShowDatePicker(false);
-                  setEditingExpense(null);
-                  setModalVisible(true);
-                }
-              },
-              {
-                text: 'Restore',
-                onPress: () => {
-                  setTitle(draft.title || '');
-                  setTotalAmount(draft.totalAmount || '');
-                  setDescription(draft.description || '');
-                  setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
-                  setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
-                  setPeople(draft.people || [{ id: '1', name: '', amount: '', paid: false }]);
-                  setShowDatePicker(false);
-                  setEditingExpense(null);
-                  setDraftRestored(true);
-                  setModalVisible(true);
-                }
-              }
-            ]
+          showNotification(
+            'Draft Found', 
+            'Restoring your saved expense draft', 
+            'info'
           );
+          
+          // Auto-restore draft
+          setTitle(draft.title || '');
+          setTotalAmount(draft.totalAmount || '');
+          setDescription(draft.description || '');
+          setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
+          setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
+          setPeople(draft.people || [{ id: '1', name: '', amount: '', paid: false }]);
+          setShowDatePicker(false);
+          setEditingExpense(null);
+          setDraftRestored(true);
+          setModalVisible(true);
           return;
         }
       }
@@ -374,7 +354,7 @@ export default function ExpenseScreen() {
         updatedAt: new Date(),
       });
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update priority');
+      showNotification('Update Failed', 'Failed to update priority', 'error');
     }
   };
 
@@ -395,7 +375,7 @@ export default function ExpenseScreen() {
         updatedAt: new Date(),
       });
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update payment status');
+      showNotification('Update Failed', 'Failed to update payment status', 'error');
     }
   };
 
@@ -413,13 +393,13 @@ export default function ExpenseScreen() {
         updatedAt: new Date(),
       });
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update settled status');
+      showNotification('Update Failed', 'Failed to update settled status', 'error');
     }
   };
 
   const handleAddExpense = async () => {
     if (!title.trim() || !totalAmount.trim()) {
-      Alert.alert('Error', 'Please enter expense title and total amount');
+      showNotification('Missing Information', 'Please enter expense title and total amount', 'error');
       return;
     }
 
@@ -454,13 +434,13 @@ export default function ExpenseScreen() {
       setModalVisible(false);
       await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to add expense');
+      showNotification('Add Failed', 'Failed to add expense', 'error');
     }
   };
 
   const handleEditExpense = async () => {
     if (!title.trim() || !totalAmount.trim() || !editingExpense) {
-      Alert.alert('Error', 'Please enter expense title and total amount');
+      showNotification('Validation Error', 'Please enter expense title and total amount', 'error');
       return;
     }
 
@@ -492,29 +472,31 @@ export default function ExpenseScreen() {
       setModalVisible(false);
       await clearDraft(); // Clear draft after successful save
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update expense');
+      showNotification('Update Failed', 'Failed to update expense', 'error');
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
-    Alert.alert(
-      'Delete Expense',
-      'Are you sure you want to delete this expense?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'expenses', id));
-            } catch (error: any) {
-              Alert.alert('Error', 'Failed to delete expense');
-            }
-          },
-        },
-      ]
-    );
+    showNotification('Confirm Delete', 'Tap delete again to confirm removing this expense', 'warning');
+    
+    const deleteKey = `delete_expense_${id}`;
+    const existingTimeout = deleteTimeouts.current[deleteKey];
+    
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete deleteTimeouts.current[deleteKey];
+      
+      try {
+        await deleteDoc(doc(db, 'expenses', id));
+        showNotification('Deleted', 'Expense removed successfully', 'success');
+      } catch (error: any) {
+        showNotification('Delete Failed', 'Failed to delete expense', 'error');
+      }
+    } else {
+      deleteTimeouts.current[deleteKey] = setTimeout(() => {
+        delete deleteTimeouts.current[deleteKey];
+      }, 3000);
+    }
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
@@ -540,6 +522,8 @@ export default function ExpenseScreen() {
     return expenseDate.getMonth() === now.getMonth() && 
            expenseDate.getFullYear() === now.getFullYear();
   }).reduce((sum, expense) => sum + expense.totalAmount, 0);
+
+
 
   if (loading) {
     return (
@@ -568,6 +552,8 @@ export default function ExpenseScreen() {
               <Text style={[styles.statLabel, dynamicStyles.statLabel]}>Left to Receive</Text>
             </View>
           </View>
+
+
 
           <FlatList
             data={expenses}
