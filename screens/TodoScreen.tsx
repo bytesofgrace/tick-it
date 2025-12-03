@@ -63,6 +63,14 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
     return null;
   };
 
+  const isOverdue = () => {
+    if (!todo.dueDate || todo.completed) return false;
+    const now = new Date();
+    const due = new Date(todo.dueDate);
+    const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return daysUntilDue < 0;
+  };
+
   const handleToggleSubtask = async (subtaskId: string) => {
     if (!todo.subtasks) return;
     
@@ -124,11 +132,21 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
             {todo.completed && <Text style={[styles.checkmark, { fontSize: 24 * fontScale }]}>✓</Text>}
           </View>
           <View style={styles.todoText}>
-            <Text style={[styles.todoTitle, todo.completed && styles.todoTitleCompleted, { fontSize: 18 * fontScale }]}>
+            <Text style={[
+              styles.todoTitle, 
+              todo.completed && styles.todoTitleCompleted,
+              isOverdue() && styles.todoTitleOverdue,
+              { fontSize: 18 * fontScale }
+            ]}>
               {todo.title}
             </Text>
             {todo.description && (
-              <Text style={[styles.todoDescription, todo.completed && styles.todoDescriptionCompleted, { fontSize: 14 * fontScale }]}>
+              <Text style={[
+                styles.todoDescription, 
+                todo.completed && styles.todoDescriptionCompleted,
+                isOverdue() && styles.todoDescriptionOverdue,
+                { fontSize: 14 * fontScale }
+              ]}>
                 {todo.description}
               </Text>
             )}
@@ -137,7 +155,11 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
                 style={styles.subtasksToggle}
                 onPress={() => setShowSubtasks(!showSubtasks)}
               >
-                <Text style={[styles.subtasksToggleText, { fontSize: 13 * fontScale }]}>
+                <Text style={[
+                  styles.subtasksToggleText,
+                  isOverdue() && styles.subtasksToggleTextOverdue,
+                  { fontSize: 13 * fontScale }
+                ]}>
                   {showSubtasks ? '▼' : '▶'} Checklist ({getCompletedSubtasksCount()})
                 </Text>
               </TouchableOpacity>
@@ -153,7 +175,12 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
                     <View style={[styles.subtaskCheckbox, subtask.completed && styles.checkboxCompleted]}>
                       {subtask.completed && <Text style={[styles.subtaskCheckmark, { fontSize: 12 * fontScale }]}>✓</Text>}
                     </View>
-                    <Text style={[styles.subtaskText, subtask.completed && styles.subtaskTextCompleted, { fontSize: 13 * fontScale }]}>
+                    <Text style={[
+                      styles.subtaskText, 
+                      subtask.completed && styles.subtaskTextCompleted,
+                      isOverdue() && styles.subtaskTextOverdue,
+                      { fontSize: 13 * fontScale }
+                    ]}>
                       {subtask.text}
                     </Text>
                   </TouchableOpacity>
@@ -166,7 +193,13 @@ function TodoItem({ todo, onToggle, onTogglePriority, onEdit, onDelete }: TodoIt
       <View style={styles.todoActions}>
         <View style={styles.actionButtons}>
           {todo.dueDate && !todo.completed && (
-            <Text style={[styles.dueDateText, { fontSize: 12 * fontScale }]}>{formatDueDate()}</Text>
+            <Text style={[
+              styles.dueDateText,
+              isOverdue() && styles.dueDateTextOverdue,
+              { fontSize: 12 * fontScale }
+            ]}>
+              {formatDueDate()}
+            </Text>
           )}
           <TouchableOpacity onPress={() => onEdit(todo)} style={styles.editButton}>
             <Text style={[styles.editButtonText, { fontSize: 24 * fontScale }]}>✏️</Text>
@@ -252,16 +285,19 @@ export default function TodoScreen() {
 
     const saveDraft = async () => {
       try {
-        const draft = {
-          title,
-          description,
-          dueDate: dueDate?.toISOString(),
-          dueTime: dueTime?.toISOString(),
-          subtasks,
-          editingTodoId: editingTodo?.id || null,
-        };
-        await AsyncStorage.setItem('@todo_draft', JSON.stringify(draft));
-        console.log('💾 Draft auto-saved');
+        // Only save if there's actual content and we're not editing an existing todo
+        if (!editingTodo && (title.trim() || description.trim() || subtasks.length > 0)) {
+          const draft = {
+            title,
+            description,
+            dueDate: dueDate?.toISOString(),
+            dueTime: dueTime?.toISOString(),
+            subtasks,
+            editingTodoId: null, // Always null for new todos
+          };
+          await AsyncStorage.setItem('@todo_draft', JSON.stringify(draft));
+          console.log('💾 Draft auto-saved:', { title: title.slice(0, 20), hasDescription: !!description, subtasksCount: subtasks.length });
+        }
       } catch (error) {
         console.error('Failed to save draft:', error);
       }
@@ -272,31 +308,7 @@ export default function TodoScreen() {
     return () => clearTimeout(timeoutId);
   }, [title, description, dueDate, dueTime, subtasks, modalVisible, editingTodo]);
 
-  // Load draft on component mount
-  useEffect(() => {
-    const loadDraft = async () => {
-      try {
-        const draftJson = await AsyncStorage.getItem('@todo_draft');
-        if (draftJson) {
-          const draft = JSON.parse(draftJson);
-          // Only restore if it's for a new todo (not editing)
-          if (!draft.editingTodoId && !editingTodo) {
-            setTitle(draft.title || '');
-            setDescription(draft.description || '');
-            setDueDate(draft.dueDate ? new Date(draft.dueDate) : null);
-            setDueTime(draft.dueTime ? new Date(draft.dueTime) : null);
-            setSubtasks(draft.subtasks || []);
-            setDraftRestored(true);
-            console.log('📝 Draft restored');
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load draft:', error);
-      }
-    };
-
-    loadDraft();
-  }, []);
+  // Note: Draft loading is handled in openAddModal to show user confirmation dialog
 
   // Clear draft after successful save
   const clearDraft = async () => {
@@ -543,8 +555,20 @@ export default function TodoScreen() {
       const draftJson = await AsyncStorage.getItem('@todo_draft');
       if (draftJson) {
         const draft = JSON.parse(draftJson);
-        // Only show restore option if it's not an edit draft and has content
-        if (!draft.editingTodoId && (draft.title || draft.description || draft.subtasks?.length > 0)) {
+        // Only show restore option if it's not an edit draft and has meaningful content
+        const hasContent = (draft.title && draft.title.trim()) || 
+                          (draft.description && draft.description.trim()) || 
+                          (draft.subtasks && draft.subtasks.length > 0);
+        
+        console.log('🔍 Draft check:', { 
+          editingTodoId: draft.editingTodoId, 
+          title: draft.title?.slice(0, 20), 
+          description: draft.description?.slice(0, 20),
+          subtasksCount: draft.subtasks?.length || 0,
+          hasContent 
+        });
+        
+        if (!draft.editingTodoId && hasContent) {
           Alert.alert(
             'Draft Found',
             'You have an unsaved draft. Would you like to restore it?',
@@ -1114,6 +1138,9 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: '#8B7BA8',
   },
+  todoTitleOverdue: {
+    color: '#FFFFFF',
+  },
   todoDescription: {
     fontSize: 14,
     color: '#6C55BE',
@@ -1123,6 +1150,9 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: '#8B7BA8',
   },
+  todoDescriptionOverdue: {
+    color: '#FFFFFF',
+  },
   subtasksToggle: {
     marginTop: 8,
     paddingVertical: 4,
@@ -1131,6 +1161,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8B7BA8',
     fontWeight: '600',
+  },
+  subtasksToggleTextOverdue: {
+    color: '#FFFFFF',
   },
   subtasksList: {
     marginTop: 8,
@@ -1165,6 +1198,9 @@ const styles = StyleSheet.create({
   subtaskTextCompleted: {
     textDecorationLine: 'line-through',
     color: '#8B7BA8',
+  },
+  subtaskTextOverdue: {
+    color: '#FFFFFF',
   },
   todoActions: {
     flexDirection: 'row',
@@ -1331,6 +1367,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginRight: 8,
   },
+  dueDateTextOverdue: {
+    color: '#FFFFFF',
+  },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -1414,6 +1453,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 2,
     borderColor: '#CEE476',
+    alignItems: 'center',
   },
   datePickerDoneButton: {
     backgroundColor: '#CEE476',

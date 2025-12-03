@@ -431,13 +431,17 @@ export default function NotificationSettingsScreen({ navigation }: any) {
             </TouchableOpacity>
 
             {showTimePicker && (
-              <DateTimePicker
-                value={reminderTime}
-                mode="time"
-                is24Hour={false}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleTimeChange}
-              />
+              <View style={styles.datePickerContainer}>
+                <DateTimePicker
+                  value={reminderTime}
+                  mode="time"
+                  is24Hour={false}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleTimeChange}
+                  textColor="#6C55BE"
+                  themeVariant="light"
+                />
+              </View>
             )}
           </View>
         )}
@@ -455,14 +459,18 @@ export default function NotificationSettingsScreen({ navigation }: any) {
             </TouchableOpacity>
 
             {showDatePicker && (
-              <DateTimePicker
-                value={oneTimeDate}
-                mode="datetime"
-                is24Hour={false}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleDateChange}
-                minimumDate={new Date()}
-              />
+              <View style={styles.datePickerContainer}>
+                <DateTimePicker
+                  value={oneTimeDate}
+                  mode="datetime"
+                  is24Hour={false}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleDateChange}
+                  minimumDate={new Date()}
+                  textColor="#6C55BE"
+                  themeVariant="light"
+                />
+              </View>
             )}
 
             <TouchableOpacity
@@ -649,5 +657,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6C55BE',
     lineHeight: 20,
+  },
+  datePickerContainer: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#CEE476',
+    alignItems: 'center',
   },
 });

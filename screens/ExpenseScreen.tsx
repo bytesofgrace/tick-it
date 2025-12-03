@@ -76,17 +76,20 @@ export default function ExpenseScreen() {
 
     const saveDraft = async () => {
       try {
-        const draft = {
-          title,
-          totalAmount,
-          description,
-          dueDate: dueDate?.toISOString(),
-          dueTime: dueTime?.toISOString(),
-          people,
-          editingExpenseId: editingExpense?.id || null,
-        };
-        await AsyncStorage.setItem('@expense_draft', JSON.stringify(draft));
-        console.log('💾 Expense draft auto-saved');
+        // Only save if there's actual content and we're not editing an existing expense
+        if (!editingExpense && (title.trim() || totalAmount.trim() || description.trim())) {
+          const draft = {
+            title,
+            totalAmount,
+            description,
+            dueDate: dueDate?.toISOString(),
+            dueTime: dueTime?.toISOString(),
+            people,
+            editingExpenseId: null, // Always null for new expenses
+          };
+          await AsyncStorage.setItem('@expense_draft', JSON.stringify(draft));
+          console.log('💾 Expense draft auto-saved:', { title: title.slice(0, 20), totalAmount, hasDescription: !!description });
+        }
       } catch (error) {
         console.error('Failed to save expense draft:', error);
       }
@@ -266,7 +269,20 @@ export default function ExpenseScreen() {
       const draftJson = await AsyncStorage.getItem('@expense_draft');
       if (draftJson) {
         const draft = JSON.parse(draftJson);
-        if (!draft.editingExpenseId && (draft.title || draft.totalAmount || draft.description)) {
+        // Only show restore option if it's not an edit draft and has meaningful content
+        const hasContent = (draft.title && draft.title.trim()) || 
+                          (draft.totalAmount && draft.totalAmount.trim()) || 
+                          (draft.description && draft.description.trim());
+        
+        console.log('🔍 Expense draft check:', { 
+          editingExpenseId: draft.editingExpenseId, 
+          title: draft.title?.slice(0, 20), 
+          totalAmount: draft.totalAmount,
+          description: draft.description?.slice(0, 20),
+          hasContent 
+        });
+        
+        if (!draft.editingExpenseId && hasContent) {
           Alert.alert(
             'Draft Found',
             'You have an unsaved expense draft. Would you like to restore it?',
@@ -1120,9 +1136,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   datePickerContainer: {
-    width: '100%',
-    maxWidth: 400,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#CEE476',
+    alignItems: 'center',
+    width: '100%',
   },
   datePickerDoneButton: {
     backgroundColor: '#CEE476',
