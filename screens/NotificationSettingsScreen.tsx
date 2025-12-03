@@ -174,20 +174,11 @@ export default function NotificationSettingsScreen({ navigation }: any) {
   const handleFrequencyChange = async (newFrequency: NotificationFrequency) => {
     setFrequency(newFrequency);
 
-    // Show immediate feedback for frequency selection
-    const frequencyMessages = {
-      'none': 'Notifications turned off',
-      'daily': 'Daily reminders selected - set your time below',
-      'weekly': 'Weekly reminders selected - choose days and time below', 
-      'once': 'One-time reminder selected - set date and time below'
-    };
-    
-    showNotification('Reminder Type', frequencyMessages[newFrequency], 'info', 1800);
-
-    // If turning off notifications, cancel all
+    // If turning off notifications, cancel all and show confirmation
     if (newFrequency === 'none') {
       await NotificationService.cancelAllReminders();
       await saveSettings(newFrequency);
+      showNotification('Notifications Turned Off', 'All reminders have been cancelled', 'info', 2000);
       return;
     }
 
@@ -312,9 +303,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
     
     if (selectedTime) {
       setReminderTime(selectedTime);
-      
-      // Show immediate feedback
-      showNotification('Time Updated', `Reminder time set to ${formatTime(selectedTime)}`, 'success', 1800);
+      // Remove immediate notification - only show when Save button is pressed
     }
   };
 
@@ -323,9 +312,7 @@ export default function NotificationSettingsScreen({ navigation }: any) {
     
     if (selectedDate) {
       setOneTimeDate(selectedDate);
-      
-      // Show immediate feedback
-      showNotification('Date & Time Updated', `Reminder set for ${formatDateTime(selectedDate)}`, 'success', 2000);
+      // Remove immediate notification - only show when Set Reminder button is pressed
     }
   };
 

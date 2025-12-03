@@ -53,21 +53,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       message,
       type
     };
-
     // Immediately show notification, replacing current one if exists
     setCurrentNotification(notification);
     
-    // Clear any existing timeout
-    if (currentNotification) {
-      // If there's already a notification, replace it immediately
-      setNotificationQueue(prev => []);
-    }
+    // Clear any existing timeout and queue when setting a new notification
+    setNotificationQueue([]);
     
     // Auto-dismiss after specified duration
     setTimeout(() => {
       hideNotification();
     }, duration);
-  }, [currentNotification, hideNotification]);
+  }, [hideNotification]);
 
   const value = {
     showNotification,
